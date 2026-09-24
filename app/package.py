@@ -101,6 +101,12 @@ def assemble(out: Path, data: Path, box_path: Path, with_avatars: bool) -> Path:
     shutil.copy2(SRC_EXE, app_dir / f"{EXE_NAME}.exe")
     shutil.copy2(box_path, data_dir / box_path.name)
 
+    # 使用说明跟着便携包走（源码就是本目录下的「读我.txt」）
+    readme = ROOT / "读我.txt"
+    if readme.is_file():
+        shutil.copy2(readme, app_dir / readme.name)
+        print("  ✓ 读我.txt")
+
     # 职业索引永远要带（11 KB，保证离线也有全量职业）
     src = data / "prts_professions.json"
     if not src.is_file():

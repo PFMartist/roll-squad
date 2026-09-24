@@ -6,13 +6,16 @@
 
 ![编队界面](docs/preview-squad.png)
 
-## 一、直接拿走用
+## 一、下载即用
 
-`dist\随机编队\` 整个文件夹拷到哪都能跑，双击 `随机编队.exe` 即可，**不用装任何东西**：
+去 **[Releases](https://github.com/PFMartist/roll-squad/releases/latest)** 下载
+`roll-squad-v0.1.0-win64.zip`（约 21 MB），解压得到一个 `随机编队\` 文件夹，
+双击里面的 `随机编队.exe` 就能用 —— **不用装任何东西，断网也能跑**：
 
 ```
 随机编队\
 ├─ 随机编队.exe          前端资源已编进 exe（约 5.5 MB）
+├─ 读我.txt
 └─ data\                 与 exe 平级，整个文件夹就是它的"存档"
     ├─ config.json             记住你上次用的那套参数
     ├─ box_demo.json           示例干员池（见下）
@@ -21,11 +24,12 @@
     └─ history.json            抽签历史（第一次抽签时自动生成）
 ```
 
-exe 没有代码签名，Windows 可能弹「已保护你的电脑」——点**更多信息 → 仍要运行**即可。
+整个文件夹可以随便拷（U 盘、别的电脑都行）。exe 没有代码签名，
+Windows 可能弹「已保护你的电脑」——点**更多信息 → 仍要运行**即可。
 
 ## 二、换成自己的干员池（必看）
 
-仓库里带的是 **`box_demo.json` —— 全图鉴示例池**（429 名干员，按稀有度取该星级的满练度），
+包里带的是 **`box_demo.json` —— 全图鉴示例池**（429 名干员，按稀有度取该星级的满练度），
 让你打开就能看见东西；它**不是你账号的数据**，也不代表任何真实练度。
 
 1. 在 MAA 里跑一次**干员识别**，导出 `OperBoxData.json`；
@@ -64,7 +68,7 @@ exe 没有代码签名，Windows 可能弹「已保护你的电脑」——点**
 cd app\src-tauri
 cargo build                      # 或 cargo run；开发时的数据在 app\devdata\
 
-python app\package.py            # 打便携包 → dist\随机编队\
+python app\package.py            # 打便携包 → dist\随机编队\（不进仓库，发版时压成 zip 传 Release）
 python app\package.py --no-avatars     # 不带头像缓存
 python app\package.py --no-build       # 跳过 cargo build
 ```
