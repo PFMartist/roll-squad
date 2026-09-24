@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#242629">
+<title>随机编队 · 明日方舟</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- All interface assets are local. The original API and form IDs are preserved. -->
+<svg class="symbol-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="ico-settings" viewBox="0 0 24 24"><path d="m9 2-.6 3-2 .9-2.8-1L1 9l2.3 2v2L1 15l2.6 4.1 2.8-1 2 .9.6 3h6l.6-3 2-.9 2.8 1L23 15l-2.3-2v-2L23 9l-2.6-4.1-2.8 1-2-.9L15 2H9Zm3 6a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" fill="currentColor"/></symbol>
+  <symbol id="ico-history" viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 1.5 7M3 4v6h6m3-4v6l4 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"/></symbol>
+  <symbol id="ico-lock" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3M5 10h14v11H5z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 14v3" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="ico-unlock" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 9.7-1.7M5 10h14v11H5z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 14v3" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="ico-refresh" viewBox="0 0 24 24"><path d="M20 9A8 8 0 0 0 6 5L3 8m0-5v5h5M4 15a8 8 0 0 0 14 4l3-3m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="ico-back" viewBox="0 0 24 24"><path d="m15 3-9 9 9 9" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="ico-copy" viewBox="0 0 24 24"><path d="M8 8h12v13H8zM16 8V3H3v14h5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="ico-squad" viewBox="0 0 24 24"><path d="M8 2h8v4l-2 2v5l4 6v3H6v-3l4-6V8L8 6V2Zm3 0v4m2-4v4M8 18h8" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
+  <symbol id="ico-image" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM3 17l6-6 5 5 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="8" r="2" fill="currentColor"/></symbol>
+</svg>
+<div class="screen-frame">
+  <header class="topbar">
+    <div class="page-heading">
+      <button class="nav-key" type="button" data-open-settings aria-label="打开编队设置" title="编队设置"><svg><use href="#ico-settings"/></svg></button>
+      <div class="page-title"><h1>编队</h1><span>SQUAD FORMATION</span></div>
+      <div class="page-context"><strong>随机行动小组</strong><span>OPERATOR SELECTION</span></div>
+    </div>
+    <div class="topright">
+      <div class="archive-pick"><label class="pick" for="box">干员档案 <span> / BOX</span></label><select id="box" aria-label="干员档案"><option>读取中…</option></select><span id="box-badge" class="badge" aria-live="polite">读取中…</span></div>
+      <button class="history-key" type="button" data-open-history><svg><use href="#ico-history"/></svg><span>历史记录</span></button>
+      <img class="logo" src="assets/Logo_明日方舟.svg" alt="明日方舟">
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="selection-bar" aria-label="编队筛选">
+      <div class="selection-title"><svg><use href="#ico-squad"/></svg><div><h2>干员选择</h2><span id="selection-state">等待编队</span></div></div>
+      <div class="filter-controls">
+        <label class="field tier-field"><span>筛选档位</span><select id="tier" aria-label="筛选档位"></select></label>
+        <label class="field mode-field"><span>抽取模式</span><select id="mode"><option value="quota">按职业配额</option><option value="pure">纯随机</option></select></label>
+        <label class="field number-field"><span>编队人数</span><span class="number-control"><input id="n" type="number" value="12" min="1" max="13" aria-label="编队人数"><span>人</span></span></label>
+        <button class="rules-key" type="button" data-open-settings><svg><use href="#ico-settings"/></svg><span>详细设置</span></button>
+      </div>
+    </section>
+
+    <section class="rarity-bar" aria-label="稀有度筛选">
+      <div class="starrow" id="stars"><span class="lbl">稀有度</span>
+        <label class="chip r6"><input type="checkbox" data-rarity="6" checked aria-label="包含六星干员"><span><i>★</i>6</span></label>
+        <label class="chip r5"><input type="checkbox" data-rarity="5" checked aria-label="包含五星干员"><span><i>★</i>5</span></label>
+        <label class="chip r4"><input type="checkbox" data-rarity="4" checked aria-label="包含四星干员"><span><i>★</i>4</span></label>
+        <label class="chip r3"><input type="checkbox" data-rarity="3" checked aria-label="包含三星干员"><span><i>★</i>3</span></label>
+        <label class="chip r2"><input type="checkbox" data-rarity="2" checked aria-label="包含二星干员"><span><i>★</i>2</span></label>
+        <label class="chip r1"><input type="checkbox" data-rarity="1" checked aria-label="包含一星干员"><span><i>★</i>1</span></label>
+      </div>
+      <span class="filter-note" id="filter-note">已选全部稀有度</span>
+      <span class="interaction-note"><svg><use href="#ico-lock"/></svg>锁定保留 <span class="note-divider">/</span><svg><use href="#ico-refresh"/></svg>单格重抽</span>
+    </section>
+
+    <div class="stage">
+      <div class="roster-surface">
+        <div class="surface-watermark" aria-hidden="true"><span>RHODES ISLAND</span><small>OPERATOR / SELECTION</small></div>
+        <section id="squad" class="grid" aria-label="当前编队" aria-live="polite"></section>
+      </div>
+      <nav id="rail" class="rail" aria-label="按职业高亮"></nav>
+    </div>
+    <div id="warnings" class="warnings" role="status" aria-live="polite"></div>
+
+    <section class="command-bar" aria-label="编队结果与操作">
+      <div class="squad-readout"><div class="squad-count"><b id="squad-count">00</b><span>/ <span id="squad-target">12</span></span></div><div class="squad-readout-label"><strong>当前编队</strong><span id="lock-count">尚未选择干员</span></div></div>
+      <div id="summary" class="summary"></div>
+      <button id="roll" type="button" disabled><svg class="roll-symbol"><use href="#ico-squad"/></svg><span class="roll-text"><strong>开始编队</strong><small>RANDOM SELECT <kbd>R</kbd></small></span><span class="roll-arrow" aria-hidden="true">›</span></button>
+    </section>
+  </main>
+
+  <footer><span id="pool-info">正在读取干员档案</span><span class="footer-source"><i></i> 本地抽取 · 不连接游戏 <span class="footer-sep">/</span> 非官方工具</span></footer>
+</div>
+
+<dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title">
+  <header class="dialog-header"><button class="back-key" type="button" data-close-dialog aria-label="返回编队"><svg><use href="#ico-back"/></svg></button><div class="dialog-title"><svg><use href="#ico-settings"/></svg><h2 id="settings-title">设置</h2></div><span class="dialog-header-meta">SQUAD CONFIGURATION</span></header>
+  <div class="settings-body">
+    <nav class="settings-nav" aria-label="设置分类"><button class="settings-tab active" type="button" data-settings-tab="rules" aria-pressed="true"><svg><use href="#ico-squad"/></svg><span>编队</span></button><button class="settings-tab" type="button" data-settings-tab="display" aria-pressed="false"><svg><use href="#ico-image"/></svg><span>显示</span></button><div class="settings-nav-note">随机编队<br><small>LOCAL SQUAD TOOL</small></div></nav>
+    <div class="settings-content">
+      <section class="settings-page" data-settings-page="rules">
+        <h3 class="section-band">编队规则 <small>SELECTION RULES</small></h3>
+        <div class="setting-row"><div class="setting-description"><h4>避开上一轮</h4><p>抽取时避开上一轮的未锁定干员，锁定槽位仍保留。</p></div><label class="toggle"><input id="avoid" type="checkbox" checked><span class="switch-track"><span class="switch-on">开启</span><span class="switch-off">关闭</span><span class="switch-thumb"></span></span><span class="sr-only">避开上一轮</span></label></div>
+        <div class="setting-row"><label class="setting-description" for="seed"><h4>随机种子</h4><p>留空为随机；固定种子用于相同参数下重放。</p></label><input id="seed" type="text" inputmode="numeric" placeholder="随机"></div>
+        <div class="setting-row exclude-row"><label class="setting-description" for="exclude"><h4>排除干员</h4><p>填写名字或 ID，以逗号或空格分隔。</p></label><input id="exclude" type="text" placeholder="棘刺, 银灰"></div>
+        <div id="quota-panel" hidden><h3 class="section-band">职业配额 <small>CLASS QUOTA</small></h3><p class="quota-description">仅在“精确配额”模式下使用。<span id="quota-total"></span></p><div id="quota-inputs"></div></div>
+        <p class="settings-footnote">在编队页选择“精确配额”，可设置各职业人数。</p>
+      </section>
+      <section class="settings-page" data-settings-page="display" hidden>
+        <h3 class="section-band">显示设置 <small>DISPLAY SETTINGS</small></h3>
+        <div class="setting-row"><div class="setting-description"><h4>干员头像</h4><p>允许通过本地后端获取头像；关闭后不发送头像请求。</p></div><label class="toggle" id="avatars-label"><input id="avatars" type="checkbox" checked><span class="switch-track"><span class="switch-on">开启</span><span class="switch-off">关闭</span><span class="switch-thumb"></span></span><span class="sr-only">获取干员头像</span></label></div>
+        <div class="information-block"><h4>关于干员档案</h4><p>数据来自 MAA 干员识别导出。更换档案请使用编队页右上角的“干员档案”选单。</p><p>头像加载失败时，卡片自动显示职业底色与名字缩写；名单、等级与锁定操作不受影响。</p><p id="demo-settings-note" hidden>当前为演示模式：仅使用内置干员与本地头像，不访问后端。</p></div>
+        <h3 class="section-band help-band">操作说明 <small>CONTROLS</small></h3><div class="help-row"><svg><use href="#ico-lock"/></svg><p><strong>锁定干员</strong><span>整队重抽时保留该槽位；再次点击取消锁定。</span></p></div><div class="help-row"><svg><use href="#ico-refresh"/></svg><p><strong>单格重抽</strong><span>只更换当前槽位，其余干员不变。</span></p></div>
+      </section>
+    </div>
+  </div>
+  <div class="dialog-footer"><span>规则在下次抽取时生效 · 头像设置即时更新</span><button type="button" class="blue-button" data-close-dialog>完成设置 <span>›</span></button></div>
+</dialog>
+
+<dialog id="history-dialog" class="history-dialog" aria-labelledby="history-title"><header class="dialog-header"><button class="back-key" type="button" data-close-dialog aria-label="返回编队"><svg><use href="#ico-back"/></svg></button><div class="dialog-title"><svg><use href="#ico-history"/></svg><h2 id="history-title">历史记录</h2></div></header><div class="history-content"><p class="history-instruction">选择记录，使用原参数与种子重新编队。</p><ol id="history"></ol></div><div class="history-footer">ACTION RECORD <span>LOCAL / 本地记录</span></div></dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# 文本一律按 LF 存仓库 —— Windows 上吃过 CRLF / BOM 污染 markdown 的亏
+* text=auto eol=lf
+
+# 二进制，别碰
+*.exe binary
+*.png binary
+*.ico binary
+*.dll binary
+*.lib binary

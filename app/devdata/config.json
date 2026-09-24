@@ -1,0 +1,22 @@
+{
+  "box_file": "box_demo.json",
+  "fetch_avatars": true,
+  "roll_defaults": {
+    "tier": 0,
+    "mode": "quota",
+    "n": 12,
+    "avoid_last": 1,
+    "exclude": "",
+    "rarities": [1, 2, 3, 4, 5, 6],
+    "quota": {
+      "先锋": 1,
+      "近卫": 1,
+      "重装": 1,
+      "狙击": 1,
+      "术师": 1,
+      "医疗": 1,
+      "辅助": 1,
+      "特种": 1
+    }
+  }
+}

@@ -1,0 +1,29 @@
+[package]
+name = "roll-squad"
+version = "0.1.0"
+description = "随机编队 —— 从自己的干员池里抽一队"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "roll_squad_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.9"
+# 头像下载：rustls 不需要 OpenSSL，blocking 版给自定义协议的线程里用
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking", "json"] }
+percent-encoding = "2"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

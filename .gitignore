@@ -1,0 +1,15 @@
+# 编译产物
+app/src-tauri/target/
+app/src-tauri/gen/
+
+# 个人数据：绝不入库（仓库里只有示例池 box_demo.json）
+app/devdata/history.json
+app/devdata/box_remote_*.json
+app/devdata/prefetch.log
+dist/随机编队/data/history.json
+dist/随机编队/data/box_remote_*.json
+dist/随机编队/data/prefetch.log
+
+# 系统垃圾
+Thumbs.db
+desktop.ini
