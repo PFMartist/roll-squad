@@ -516,8 +516,3 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   footer { display: none; }
 }
 
-/* 长屏（宽而矮，同上面的紧凑档）：浅色面板不再拉满整屏，改成贴住内容并居中 ——
-   否则卡片两侧会各留一大片浅色空白；把那块交给两侧的深色边框更干净。 */
-@media (max-height: 620px) {
-  .screen-frame { width: fit-content; max-width: 100%; margin-inline: auto; }
-}
