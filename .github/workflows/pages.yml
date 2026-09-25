@@ -1,0 +1,40 @@
+# 把 web/ 发布到 GitHub Pages —— 在线试用（内置 16 名干员的演示，纯前端、不联网）
+#
+# 页面本身不需要后端：前端探测不到本地服务时会自动进演示模式。
+# 站点地址：https://pfmartist.github.io/roll-squad/
+name: 部署网页演示到 Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

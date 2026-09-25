@@ -9,3 +9,7 @@ dist/
 app/devdata/history.json
 app/devdata/box_remote_*.json
 app/devdata/prefetch.log
+
+# Python 字节码（跑过打包/生成脚本就会有）
+__pycache__/
+*.pyc

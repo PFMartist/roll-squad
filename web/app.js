@@ -1,9 +1,16 @@
 'use strict';
 
 /* ---------------------------------------------------------------- 演示模式
-   ?demo=1 时不连后端，用内置的 16 名干员（头像在 assets/demo/）。
-   **双击 index.html?demo=1 就能看**，不需要 Python、不需要 box 数据——给设计稿用。 */
-const DEMO = new URLSearchParams(location.search).has('demo');
+   演示数据是**全游戏可获取干员**（429 名，含星级/职业/合成练度），烤在 assets/demo_roster.js 里，
+   由 work/20260925-roll-squad-repo/make_demo_roster.py 生成。
+   演示模式**不带干员立绘**：卡片走职业色块 + 名字首字，头像开关固定关闭（见 demoState 的 avatars_locked）。
+
+   什么时候进演示：
+     · 地址带 ?demo=1（**双击 index.html?demo=1 也能看**，不需要 Python、不需要 box 数据）
+     · 没有后端又没写 ?demo=1 —— GitHub Pages 在线试用、或直接双击 index.html：
+       boot() 里探测失败会自动切过来，免得只看到一句报错。 */
+let DEMO = new URLSearchParams(location.search).has('demo');
+let autoDemo = false;       // 是不是"连不上后端才退到演示"的（界面上要说清楚）
 // 三种宿主共用这一份前端：?demo=1 演示 / Tauri 桌面版 / 浏览器 + Python 服务
 const TAURI = typeof window !== 'undefined' && !!window.__TAURI__;
 const ASSET = 'assets';     // 一律相对路径：file:// 下也能用
@@ -16,27 +23,26 @@ const PROF_COLOR = {
 /** 职业图标（PRTS 来的游戏原素材）：默认白色图标，'_白' 是黑色变体（配白方块用） */
 const PROF_ICON = (p, v = '') => `${ASSET}/图标_职业_${p}_大图${v}.png`;
 const ELITE_ICON = (e) => `${ASSET}/图标_升级_精英化${e}.png`;
-const DEMO_PROFS = ['先锋', '近卫', '重装', '狙击', '术师', '医疗', '辅助', '特种'];
 let railFilter = null;      // 右侧竖栏选中哪个职业（= 只高亮这个职业的卡）
 
-const DEMO_OPS = [
-  { id: 'd1', name: '史尔特尔', profession: '近卫', rarity: 6, elite: 2, level: 90, potential: 4 },
-  { id: 'd2', name: '银灰', profession: '近卫', rarity: 6, elite: 2, level: 90, potential: 2 },
-  { id: 'd3', name: '能天使', profession: '狙击', rarity: 6, elite: 2, level: 90, potential: 4 },
-  { id: 'd4', name: '澄闪', profession: '术师', rarity: 6, elite: 2, level: 90, potential: 2 },
-  { id: 'd5', name: '白面鸮', profession: '医疗', rarity: 5, elite: 2, level: 70, potential: 6 },
-  { id: 'd6', name: '德克萨斯', profession: '先锋', rarity: 5, elite: 2, level: 70, potential: 6 },
-  { id: 'd7', name: '临光', profession: '重装', rarity: 5, elite: 2, level: 80, potential: 3 },
-  { id: 'd8', name: '羽毛笔', profession: '近卫', rarity: 5, elite: 2, level: 60, potential: 4 },
-  { id: 'd9', name: '白金', profession: '狙击', rarity: 5, elite: 1, level: 55, potential: 6 },
-  { id: 'd10', name: '阿米娅', profession: '术师', rarity: 5, elite: 2, level: 80, potential: 6 },
-  { id: 'd11', name: '桃金娘', profession: '先锋', rarity: 4, elite: 2, level: 40, potential: 6 },
-  { id: 'd12', name: '褐果', profession: '医疗', rarity: 4, elite: 2, level: 40, potential: 6 },
-  { id: 'd13', name: '远山', profession: '术师', rarity: 4, elite: 2, level: 43, potential: 6 },
-  { id: 'd14', name: '伊桑', profession: '特种', rarity: 4, elite: 1, level: 30, potential: 1 },
-  { id: 'd15', name: '芬', profession: '先锋', rarity: 3, elite: 1, level: 55, potential: 6 },
-  { id: 'd16', name: 'THRM-EX', profession: '特种', rarity: 1, elite: 0, level: 30, potential: 6 },
-].map((o) => ({ ...o, img: `${ASSET}/demo/${o.id}.png` }));
+/** 演示干员池：assets/demo_roster.js 里的紧凑数组 → 统一形状（字段名跟后端返回的一致） */
+const DEMO_ROSTER = (typeof window !== 'undefined' && window.DEMO_ROSTER) || { profs: [], ops: [] };
+const DEMO_PROFS = DEMO_ROSTER.profs.length
+  ? DEMO_ROSTER.profs
+  : ['先锋', '近卫', '重装', '狙击', '术师', '医疗', '辅助', '特种'];
+const DEMO_OPS = (DEMO_ROSTER.ops || []).map(([name, rarity, elite, level, prof, potential]) => ({
+  id: name, name, rarity, elite, level, potential, profession: DEMO_PROFS[prof],
+}));
+
+/** 演示干员库对应的游戏版本（由 app/make_demo_roster.py 写进 demo_roster.js）——
+    页脚、BOX 下拉、徽章提示、演示横幅都用它，别在别处硬编码版本号。 */
+const DEMO_VER = DEMO_ROSTER.version
+  ? `${DEMO_ROSTER.version}${DEMO_ROSTER.versionName ? `「${DEMO_ROSTER.versionName}」` : ''}`
+  : '';
+const DEMO_VER_LONG = DEMO_VER
+  ? `演示干员库对应 ${DEMO_VER}：该批次新增 ${(DEMO_ROSTER.newest || []).join('、')}；` +
+    `解包主表快照抓取于 ${DEMO_ROSTER.snapshot}。游戏出新干员后需重新生成（app/make_demo_roster.py）。`
+  : '';
 
 /* 档位判定 —— 与 Rust 侧 roster.rs 的 tier_pass 同一套规则，演示模式也得跟着走。
    其中 2 = 精一满级、4 = 模组线，这两条线**按星级变化**，数值取自官方数据：
@@ -61,8 +67,13 @@ function tierPass(op, tier) {
 function demoState() {
   return {
     demo: true, roster: DEMO_OPS.length,
-    box: { file: '演示数据（内置）', path: '', sync: null, age_days: null, stale: false },
-    box_options: [], avatars_enabled: true,
+    box: {
+      file: `演示数据（全游戏干员${DEMO_ROSTER.version ? ` · ${DEMO_ROSTER.version}` : ''}）`,
+      path: '', sync: null, age_days: null, stale: false,
+    },
+    box_options: [],
+    // 演示/在线模式不带干员立绘：头像固定关闭，开关也锁住（见 syncControls）
+    avatars_enabled: false, avatars_locked: true,
     tiers: Object.fromEntries(Array.from({ length: TIER_MAX + 1 }, (_, t) => {
       const pool = DEMO_OPS.filter((o) => tierPass(o, t));
       const prof = {};
@@ -78,6 +89,7 @@ function demoState() {
 function demoApi(path, body) {
   if (path === '/api/state' || path === '/api/settings') return demoState();
   if (path !== '/api/roll') throw new Error(`演示模式没有这个接口：${path}`);
+  if (!DEMO_OPS.length) throw new Error('演示干员池没加载（assets/demo_roster.js 缺失或被挡了）');
   const n = body.n || 12;
   const byId = Object.fromEntries(DEMO_OPS.map((o) => [o.id, o]));
   const rar = (body.rarities && body.rarities.length) ? body.rarities : [1, 2, 3, 4, 5, 6];
@@ -133,9 +145,9 @@ async function api(path, body) {
   return data;
 }
 
-/** 头像地址：演示用内置图，桌面版走自定义协议（Windows 上是 http://avatar.localhost/…），浏览器走本地服务 */
+/** 头像地址：演示模式没有立绘（返回空串，卡片露出职业色块），桌面版走自定义协议，浏览器走本地服务 */
 function avatarSrc(op) {
-  if (DEMO) return op.img;
+  if (DEMO) return op.img || '';
   if (TAURI) return window.__TAURI__.core.convertFileSrc(op.name, 'avatar');
   return `/api/avatar?name=${encodeURIComponent(op.name)}`;
 }
@@ -175,6 +187,7 @@ function renderBadge() {
   el.textContent = DEMO ? `${ST.roster} 名干员 · 离线演示` : `${ST.roster} 名干员 · ${age}`;
   el.classList.toggle('stale', !!b.stale);
   if (b.stale) el.textContent += ' · 请重新同步';
+  if (DEMO && DEMO_VER_LONG) el.title = DEMO_VER_LONG;      // 悬停看演示池对应的游戏版本
 }
 
 function renderBoxPick() {
@@ -395,15 +408,36 @@ function syncControls() {
   $('#tier').innerHTML = Object.entries(ST.tiers)
     .map(([t, v]) => `<option value="${t}">${t} · ${v.desc}（${v.n} 人）</option>`).join('');
   if (keepTier && ST.tiers[keepTier]) $('#tier').value = keepTier;
-  $('#avatars').checked = ST.avatars_enabled !== false;
-  $('#avatars-label').classList.toggle('off', !$('#avatars').checked);
+  const av = $('#avatars');
+  av.checked = ST.avatars_enabled !== false;
+  $('#avatars-label').classList.toggle('off', !av.checked);
+  // 演示 / 在线模式没有立绘可发：开关锁死，免得让人以为点开就能出图
+  if (ST.avatars_locked) {
+    av.disabled = true;
+    $('#avatars-label').title = '在线演示不含干员立绘，头像固定关闭';
+    const row = $('#avatars-label').closest('.setting-row');
+    const desc = row && row.querySelector('.setting-description p');
+    if (desc) desc.textContent = '在线演示不含干员立绘：卡片用职业色块 + 名字首字。装桌面版后才有真头像。';
+  }
   renderBadge();
   renderBoxPick();
   renderHistory();
   updatePoolInfo();
+  renderDemoVersion();
+}
+
+/** 页脚常驻一行：演示干员库对应的游戏版本（在线试用时一眼能看出数据有多新） */
+function renderDemoVersion() {
+  const src = document.querySelector('.footer-source');
+  if (!src || !DEMO || !DEMO_ROSTER.version || src.dataset.demoVer) return;
+  src.dataset.demoVer = '1';
+  src.insertAdjacentHTML('beforeend',
+    ` <span class="footer-sep">/</span> <span title="${esc(DEMO_VER_LONG)}">` +
+    `演示数据 ${esc(DEMO_ROSTER.version)} 版</span>`);
 }
 
 async function onAvatarsToggle(e) {
+  if (e.target.disabled) return;          // 演示/在线模式里这个开关是锁死的
   const want = e.target.checked;
   try {
     ST = await api('/api/settings', { avatars: want });
@@ -432,8 +466,15 @@ async function boot() {
   try {
     ST = await api('/api/state');
   } catch (e) {
-    renderError(`读不到后端状态：${e.message}（服务还在跑吗？）`);
-    return;
+    if (DEMO || TAURI) {                    // 显式演示 / 桌面版：那就是真出错，照实报
+      renderError(`读不到后端状态：${e.message}（服务还在跑吗？）`);
+      return;
+    }
+    // 既没写 ?demo=1、又不是桌面版、后端还连不上 —— 多半是把 index.html 直接打开、
+    // 或者挂在 GitHub Pages 上：自动退到内置演示，并明确告诉用户看的是假数据。
+    DEMO = true;
+    autoDemo = true;
+    ST = demoState();
   }
   // 配额输入框只建一次（跟 box 无关，重建会冲掉你填的值）
   $('#quota-inputs').innerHTML = ST.professions
@@ -442,6 +483,11 @@ async function boot() {
     .join('');
   syncControls();
   applyDefaults();
+  if (autoDemo) {
+    $('#warnings').innerHTML = '<div>没连上本地服务，已切到<b>内置演示数据</b>' +
+      `（全游戏 ${DEMO_OPS.length} 名${DEMO_VER ? ` · ${esc(DEMO_VER)}` : ''}）。` +
+      '这里没有立绘，卡片走职业色块；要抽自己的干员池，请下载桌面版。</div>';
+  }
 
   $('#mode').onchange = () => { $('#quota-panel').hidden = $('#mode').value !== 'quota'; };
   $('#tier').onchange = updatePoolInfo;
