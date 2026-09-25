@@ -68,7 +68,11 @@ jobs:
       - name: 收产物
         run: |
           mkdir -p out
-          find app/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          # 产物名跟桌面包成对（roll-squad-vX.Y.Z-android.apk），免得 Release 里
+          # 出现 app-universal-release.apk 这种和 zip 不成对的名字
+          VERSION=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          APK=$(find app/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -1)
+          cp "$APK" "out/roll-squad-v${VERSION}-android.apk"
           ls -lh out
 
       - uses: actions/upload-artifact@v4
