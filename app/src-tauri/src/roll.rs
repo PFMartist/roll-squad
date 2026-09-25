@@ -272,7 +272,7 @@ pub fn build_and_roll(roster: &[Operator], req: &RollReq) -> Result<RollOutcome,
 
     let min_elite = req.min_elite.unwrap_or(0);
     let min_level = req.min_level.unwrap_or(0);
-    let after_tier = crate::roster::apply_tier(roster, req.tier, min_elite, min_level);
+    let after_tier = crate::roster::apply_tier(roster, req.tier, req.min_elite, req.min_level);
 
     let mut excluded: HashSet<String> = req.exclude.iter().cloned().collect();
     let avoid = recent_ids(req.avoid_last);

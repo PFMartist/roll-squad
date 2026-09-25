@@ -22,21 +22,53 @@ const SKIP_PROFESSIONS: [&str; 2] = ["TOKEN", "TRAP"];
 /// 别用浏览器式 UA：prts.wiki 的 WAF 会 403（实测）。自定义 UA 反而放行。
 const PRTS_UA: &str = "maa-roll-squad/1.0 (personal tool)";
 
-/// 档位 → (最低精英化, 最低等级)。与 Python 版 TIER_RULE 一致。
+/// 档位按**包含关系**编号：0 ⊇ 1 ⊇ 2 ⊇ 3 ⊇ 4 ⊇ 5（越往下要求越高）。
+/// 其中 0/1/3/5 是**统一线**（一对数字就能表达），2/4 是按星级的线（见 tier_pass）。
 pub fn tier_gate(tier: u32) -> (u32, u32) {
     match tier {
-        1 => (1, 0),
-        2 => (2, 0),
-        3 => (2, 80),
+        1 => (1, 0),   // 精一及以上
+        3 => (2, 0),   // 精二
+        5 => (2, 80),  // 精二且 Lv≥80
         _ => (0, 0),
+    }
+}
+
+/// 档位 4/5 是**按星级变化的线**，没法用一对数字表达，只能用判定函数。
+///
+/// 两条线的数值都取自官方数据，不是拍脑袋：
+///   · E1_CAP —— 主表 `phases[1].maxLevel`，各星级实测完全统一
+///   · MODULE_GATE —— `uniequip_table.json` 的 `unlockEvolvePhase` + `unlockLevel`
+///     （取该干员**最容易开的那个非证章模组**；证章 type=INITIAL，不算）
+pub const E1_CAP: [(u32, u32); 4] = [(3, 55), (4, 60), (5, 70), (6, 80)];
+pub const MODULE_GATE: [(u32, u32); 3] = [(4, 40), (5, 50), (6, 60)];
+
+fn cap_of(table: &[(u32, u32)], rarity: u32) -> u32 {
+    table.iter().find(|(r, _)| *r == rarity).map(|(_, v)| *v).unwrap_or(u32::MAX)
+}
+
+/// 这个干员满不满足某个档位
+///
+/// 「精一满级」注意：**精英化后等级会重置**（实测数据里有 87 人是 E2 却低于 E1 上限，
+/// 例如杜宾 E2 Lv1），所以不能只看当前等级 —— 升精二的前提就是精一满级，
+/// 因此 **E2 的干员一律算过了这条线**。
+pub fn tier_pass(op: &Operator, tier: u32) -> bool {
+    match tier {
+        2 => op.elite >= 2 || (op.elite >= 1 && op.level >= cap_of(&E1_CAP, op.rarity)), // 精一满级
+        4 => op.elite >= 2 && op.level >= cap_of(&MODULE_GATE, op.rarity),              // 模组线
+        t => {
+            let (e, l) = tier_gate(t);
+            op.elite >= e && op.level >= l
+        }
     }
 }
 
 pub fn tier_desc(tier: u32) -> &'static str {
     match tier {
         1 => "精一及以上",
-        2 => "精二",
-        3 => "精二且 Lv≥80",
+        2 => "精一满级（按星级）",
+        3 => "精二",
+        4 => "模组线（按星级）",
+        5 => "精二且 Lv≥80",
         _ => "全部持有",
     }
 }
@@ -304,22 +336,33 @@ pub fn build_roster(box_path: &Path) -> Result<Vec<Operator>, String> {
     Ok(out)
 }
 
-/// 按档位 + 可选门槛筛
-pub fn apply_tier(ops: &[Operator], tier: u32, min_elite: u32, min_level: u32) -> Vec<Operator> {
-    let (e, l) = tier_gate(tier);
-    let (e, l) = (e.max(min_elite), l.max(min_level));
+/// 按档位筛；细粒度门槛对 0~3 是**覆盖**（保持老语义），对 4/5 是**叠加**
+pub fn apply_tier(ops: &[Operator], tier: u32, min_elite: Option<u32>, min_level: Option<u32>) -> Vec<Operator> {
     ops.iter()
-        .filter(|o| o.elite >= e && o.level >= l)
+        .filter(|o| {
+            if !tier_pass(o, tier) {
+                return false;
+            }
+            if matches!(tier, 0 | 1 | 3 | 5) {
+                // 统一线档位：细粒度门槛可以覆盖它
+                let (e0, l0) = tier_gate(tier);
+                let e = min_elite.unwrap_or(e0);
+                let l = min_level.unwrap_or(l0);
+                o.elite >= e && o.level >= l
+            } else {
+                min_elite.map(|e| o.elite >= e).unwrap_or(true)
+                    && min_level.map(|l| o.level >= l).unwrap_or(true)
+            }
+        })
         .cloned()
         .collect()
 }
 
-/// 每个档位各有多少人（给前端下拉框显示）
+/// 每个档位各有多少人（给前端下拉框显示）。编号即包含关系，直接顺序遍历。
 pub fn tier_counts(ops: &[Operator]) -> serde_json::Value {
     let mut m = serde_json::Map::new();
-    for tier in 0..=3u32 {
-        let (e, l) = tier_gate(tier);
-        let n = ops.iter().filter(|o| o.elite >= e && o.level >= l).count();
+    for tier in 0..=5u32 {
+        let n = ops.iter().filter(|o| tier_pass(o, tier)).count();
         m.insert(tier.to_string(), serde_json::json!(n));
     }
     serde_json::Value::Object(m)

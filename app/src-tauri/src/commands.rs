@@ -158,10 +158,10 @@ pub fn get_state() -> Result<Value, String> {
         None => (String::new(), None, None),
     };
 
+    // 档位编号即包含关系（0 最宽 → 5 最严），顺序遍历即可
     let mut tiers = Map::new();
-    for t in 0..=3u32 {
-        let (e, l) = roster::tier_gate(t);
-        let pool: Vec<Operator> = ops.iter().filter(|o| o.elite >= e && o.level >= l).cloned().collect();
+    for t in 0..=5u32 {
+        let pool: Vec<Operator> = ops.iter().filter(|o| roster::tier_pass(o, t)).cloned().collect();
         tiers.insert(
             t.to_string(),
             json!({ "n": pool.len(), "desc": roster::tier_desc(t), "prof": roster::profession_hist(&pool) }),
