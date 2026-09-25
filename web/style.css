@@ -492,3 +492,26 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
 }
 .op-details { background: #22262ac9; padding: 3px 5px; bottom: 15.5%; }
 @media (max-width: 760px) { .command-bar { flex: 0 0 auto; min-height: 0; } }
+
+/* 矮视口（横屏手机、或者把窗口压得很矮）：脚手架整体压扁，把高度让给编队格。
+   卡片高度本来就跟着容器走（--card-height 在宽 ≥1101 时取 min(405px, 100cqh/2, 100cqw/3.6)），
+   所以只要别让顶栏/选择条/操作条把高度吃掉，卡片自然会变大。
+   页脚只是署名，矮屏直接收掉。 */
+@media (max-height: 620px) {
+  .topbar { flex-basis: 50px; }
+  .nav-key { width: 60px; } .nav-key svg { width: 20px; height: 20px; }
+  .page-title { min-width: 122px; padding: 2px 16px 4px; } h1 { font-size: 24px; letter-spacing: .1em; }
+  .page-title > span { font-size: 6px; }
+  .logo { width: 68px; max-height: 26px; }
+  .history-key { padding: 6px 0; }
+  .pick { font-size: 11px; } #box { min-height: 22px; font-size: 12px; }
+  .badge { font-size: 9px; }
+  .selection-bar { flex-basis: 40px; }
+  .selection-title > svg { width: 20px; height: 23px; }
+  .selection-title h2 { font-size: 17px; }
+  .selection-title span { font-size: 9px; }
+  .rarity-bar { flex-basis: 26px; }
+  .command-bar { flex-basis: 52px; margin-top: 3px; }
+  .roster-surface { padding: 5px 8px 5px 0; }
+  footer { display: none; }
+}
