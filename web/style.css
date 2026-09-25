@@ -15,8 +15,14 @@
   --gold: #edcf65;
   --orange: #de8445;
   --dark: #282a2b;
-  --card-height: clamp(186px, calc((100dvh - 322px) / 2), 405px);
   --card-gap: clamp(15px, 1.35vw, 26px);
+  /* --cards-chrome = 网格左右被占掉的宽度（工作区留白 + 职业栏 + 间距 + 网格右留白），
+     用来按"6 列要放得下"反推卡片高度。宽度 ≥1101px 时由容器查询精确算，这里只是兜底。 */
+  --cards-chrome: 118px;
+  /* 卡片高度 = min(2 行放得下, 6 列放得下)。窗口变窄时**优先保住两行六列**、卡片跟着缩，
+     而不是把格子挤成 3 行 4 行；窄到 ≤900px（卡片高只剩 ~186）才退回按行铺。 */
+  --card-height: min(clamp(186px, calc((100dvh - 322px) / 2), 405px),
+                     calc((100vw - var(--cards-chrome) - var(--card-gap) * 5) / 3.6));
   --sans: 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', 'Noto Sans CJK SC', system-ui, sans-serif;
   --serif: 'Noto Serif CJK SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
 }
@@ -130,8 +136,11 @@ select option { background: #343536; color: #eff0f1; }
 .surface-watermark { position: absolute; bottom: 8px; left: -10px; color: #40464a12; pointer-events: none; }
 .surface-watermark span { display: block; font: 900 clamp(36px, 6vw, 100px)/.8 Impact, 'Arial Narrow', sans-serif; letter-spacing: -.04em; }
 .surface-watermark small { font: 10px/2 Arial, sans-serif; letter-spacing: .25em; }
-.grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: var(--card-height); gap: var(--card-gap); width: min(100%, calc(var(--card-height) * 3.6 + var(--card-gap) * 5)); align-content: center; }
-.grid.has-extra { grid-template-columns: repeat(7, minmax(0, 1fr)); width: min(100%, calc(var(--card-height) * 4.2 + var(--card-gap) * 6)); }
+/* 槽位格：跟游戏里的编队格一致 —— **先自上而下填满最左列，再填右边一列**（2 行 × 6 列），
+   所以用 grid-auto-flow: column + 固定 2 行；窄屏会退回按行铺（见下面各断点）。
+   注意 DOM 顺序始终是槽位顺序 01、02、03…，只是摆的位置不同（renderRail 等按下标取人）。 */
+.grid { position: relative; z-index: 1; display: grid; grid-auto-flow: column; grid-template-rows: repeat(2, var(--card-height)); grid-auto-columns: minmax(0, 1fr); gap: var(--card-gap); width: min(100%, calc(var(--card-height) * 3.6 + var(--card-gap) * 5)); align-content: center; }
+.grid.has-extra { width: min(100%, calc(var(--card-height) * 4.2 + var(--card-gap) * 6)); }
 .card { position: relative; min-width: 0; background: #303234; box-shadow: 5px 8px 9px #25292d44; isolation: isolate; transition: filter .16s, opacity .16s, transform .16s, box-shadow .16s; --rarity: #b4b7b9; }
 .card::before { content: ''; position: absolute; z-index: 6; top: -3px; height: 3px; left: 0; width: 100%; background: #fafbfc; box-shadow: 0 1px 1px #20252744; pointer-events: none; }
 .card::after { content: ''; position: absolute; z-index: 6; top: -3px; left: 0; bottom: 0; width: 2px; background: var(--rarity); pointer-events: none; }
@@ -345,7 +354,7 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   .elite img { max-height: 29px; } .lv { bottom: 11%; } .op-details { right: 6%; gap: 4px; } .potential-mark { width: 18px; height: 18px; }
 }
 @media (max-width: 1100px) {
-  :root { --card-height: 262px; --card-gap: 21px; } .screen-frame { height: auto; min-height: 100dvh; margin: 0 18px; }
+  :root { --cards-chrome: 114px; --card-gap: 21px; } .screen-frame { height: auto; min-height: 100dvh; margin: 0 18px; }
   body::before { left: 4px; } body::after { right: 4px; } body::before, body::after { width: 6px; }
   .logo { display: none; } .topbar { padding-right: 20px; } .topright { gap: 20px; } #box { width: 200px; max-width: 24vw; }
   .workspace { padding-inline: 21px; } .selection-bar { flex-wrap: wrap; padding: 20px 0 14px; gap: 14px; }
@@ -353,8 +362,6 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   .selection-title h2 { font-size: 21px; } .field > span:first-child { display: none; }
   .rarity-bar { margin-bottom: 8px; } .interaction-note { display: none; }
   .stage { min-height: 540px; gap: 17px; } .rail { margin-right: -21px; } .rail button { min-height: 46px; }
-  .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 780px); grid-auto-rows: var(--card-height); }
-  .grid.has-extra { grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 780px); }
   .roster-surface { padding-block: 16px; }
   .name { font-size: 21px; } .stars { font-size: 14px; } .lv { width: 46px; } .lv b { font-size: 28px; }
   .portrait { top: 3%; } .command-bar { min-height: 91px; }
@@ -363,6 +370,12 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   .settings-nav { padding: 22px 13px; } .settings-tab { padding: 12px; gap: 12px; font-size: 18px; }
   .settings-content { padding: 22px; } .setting-row { gap: 20px; padding-inline: 8px; } .setting-description h4 { min-width: 145px; font-size: 19px; }
   .toggle { flex-basis: 148px; width: 148px; margin-right: 12px; } .setting-row input[type=text] { flex-basis: 160px; width: 160px; }
+}
+/* ≤900px：两行六列已经缩到卡片高只剩 ~186（再小里面的字就挤了），这时才退回四列按行铺。
+   900–1100px 之间仍然保持两行六列，卡片随宽度缩小 —— 见 --card-height 的宽度那一项。 */
+@media (max-width: 900px) {
+  :root { --card-height: 262px; }
+  .grid, .grid.has-extra { grid-auto-flow: row; grid-template-rows: none; grid-auto-rows: var(--card-height); grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 780px); }
 }
 @media (max-width: 760px) {
   :root { --card-height: 266px; --card-gap: 18px; }
@@ -381,7 +394,7 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   .rarity-bar { gap: 10px; border-top: 0; margin-bottom: 5px; } .lbl { margin-right: 5px; font-size: 10px; } .starrow { gap: 4px; } .chip > span { width: 36px; }
   .filter-note { display: none; }
   .stage { gap: 12px; } .roster-surface { padding: 8px 0 18px; }
-  .grid, .grid.has-extra { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: var(--card-height); }
+  .grid, .grid.has-extra { grid-auto-flow: row; grid-template-rows: none; grid-auto-rows: var(--card-height); grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rail { flex-basis: 47px; margin-right: -16px; position: sticky; top: 0; align-self: flex-start; }
   .rail button { width: 47px; min-height: 54px; } .rail button img { width: 25px; height: 25px; } .rail button .n { right: 3px; bottom: 5px; font-size: 9px; }
   .rail-heading { padding-top: 12px; font-size: 8px; } .rail-end { font-size: 6px; }
@@ -413,7 +426,7 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
 }
 @media (max-width: 540px) {
   :root { --card-height: 258px; --card-gap: 17px; }
-  .grid, .grid.has-extra { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid, .grid.has-extra { grid-auto-flow: row; grid-template-rows: none; grid-auto-rows: var(--card-height); grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cap { gap: 2px; } .stars { font-size: 12px; } .clsbox { width: 24px; height: 25px; } .clsbox img { width: 20px; height: 20px; }
   .portrait { top: 9%; width: 137%; left: -18.5%; }
   .acts { top: 37%; } .acts button { min-height: 33px; font-size: 10px; gap: 3px; }
@@ -439,7 +452,8 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
 @supports (height: 1cqh) {
   @media (min-width: 1101px) {
     .roster-surface { container-type: size; }
-    .grid { --card-height: min(405px, calc((100cqh - var(--card-gap)) / 2)); }
+    /* 同时受容器高度（2 行）与容器宽度（6 列）约束 —— 卡片比例不会被窗口形状拉歪 */
+    .grid { --card-height: min(405px, calc((100cqh - var(--card-gap)) / 2), calc((100cqw - var(--card-gap) * 5) / 3.6)); }
   }
 }
 /* Source portraits are square avatars, not full-height character illustrations. */
