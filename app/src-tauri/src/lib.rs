@@ -12,6 +12,7 @@ mod roster;
 
 use std::sync::atomic::Ordering;
 use tauri::http::Response;
+use tauri::Manager;
 
 /// 头像通过自定义协议供给前端。
 /// Windows 上前端拿到的 URL 形如 http://avatar.localhost/<percent-encoded 名字>，
@@ -63,6 +64,19 @@ pub fn run_prefetch() -> Result<usize, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())   // 系统文件选择器（导入 box）
+        .plugin(tauri_plugin_fs::init())       // 读选择器给的文件：安卓上是 content:// 需要用它的原生实现
+        .setup(|app| {
+            // 安卓上 current_exe() 指向 /system/bin/app_process，exe 同级目录没有意义，
+            // 数据改放应用私有目录（卸载即清）。桌面版保持便携形态，不动。
+            #[cfg(mobile)]
+            {
+                let dir = app.path().app_data_dir()?;
+                paths::set_data_dir(dir);
+            }
+            paths::ensure_dir(&paths::data_dir())?;
+            Ok(())
+        })
         .register_asynchronous_uri_scheme_protocol("avatar", |_ctx, req, responder| {
             let path = req.uri().path().to_string();
             std::thread::spawn(move || {
@@ -76,6 +90,7 @@ pub fn run() {
             commands::get_state,
             commands::roll,
             commands::save_settings,
+            commands::import_box,
             commands::prefetch_avatars,
         ])
         .run(tauri::generate_context!())

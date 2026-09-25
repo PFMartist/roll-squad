@@ -20,7 +20,7 @@
 
 ## 一、下载即用
 
-去 **[Releases](https://github.com/PFMartist/roll-squad/releases/latest)** 下载
+**Windows**：去 **[Releases](https://github.com/PFMartist/roll-squad/releases/latest)** 下载
 `roll-squad-v0.1.x-win64.zip`（约 21 MB），解压得到一个 `随机编队\` 文件夹，
 双击里面的 `随机编队.exe` 就能用 —— **不用装任何东西，断网也能跑**：
 
@@ -39,14 +39,20 @@
 整个文件夹可以随便拷（U 盘、别的电脑都行）。exe 没有代码签名，
 Windows 可能弹「已保护你的电脑」——点**更多信息 → 仍要运行**即可。
 
+**安卓**：同一个 Releases 页里下载 `app-universal-release.apk`（约 11 MB），
+传到手机上点开装即可 —— Android 7.0 以上，**锁横屏**，装的第一个包需要允许「安装未知来源应用」。
+
 ## 二、换成自己的干员池（必看）
 
 包里带的是 **`box_demo.json` —— 全图鉴示例池**（429 名干员），让你打开就能看见东西；
 它**不是你账号的数据**，也不代表任何真实练度。
 
 1. 在 MAA 里跑一次**干员识别**，导出 `OperBoxData.json`；
-2. 改名成 `box_20260925.json` 这样（**必须以 `box` 开头、`.json` 结尾**）放进 `data\`；
-3. 界面上方「干员档案 / BOX」下拉里选中它 —— 选择会写回 `config.json`，下次打开就是它。
+2. 点界面上方「干员档案 / BOX」旁边的**「导入」**按钮，选中那个文件 —— 桌面版和安卓版都是这个入口，
+   它会拷进数据目录并自动切过去；手动放进 `data\`（**名字以 `box` 开头、`.json` 结尾**）也一样；
+3. 之后换新池子重复第 2 步就行，旧的池子会一直留在下拉里。
+
+安卓版的数据在应用私有目录里，外部塞不进去，所以只能用「导入」按钮。
 
 干员池导出超过 14 天，BOX 徽章会变黄提醒你重新同步（练度会变）。
 
@@ -89,6 +95,16 @@ python app\package.py --no-build       # 跳过 cargo build
 ```
 
 打包前先关掉正在运行的 app —— exe 被占用会删不掉旧目录。
+
+安卓包另外需要 JDK 21 与 Android SDK/NDK（`ANDROID_HOME`、`NDK_HOME`）：
+
+```powershell
+cd app
+npm install
+npx tauri android build --apk -t aarch64 x86_64     # 真机 + 模拟器各一份 ABI
+```
+
+产物在 `app\src-tauri\gen\android\app\build\outputs\apk\universal\release\`。
 
 前端就是 `web\`：浏览器打开 `web\index.html?demo=1` 能看演示（内置全游戏干员、不联网），
 改样式刷新即可，不用重新编译。`app\smoke-test.mjs` 是用调试端口驱动真应用的冒烟测试。

@@ -1,6 +1,10 @@
 # 文本一律按 LF 存仓库 —— Windows 上吃过 CRLF / BOM 污染 markdown 的亏
 * text=auto eol=lf
 
+# 例外：批处理必须 CRLF 检出，cmd.exe 对 LF 结尾的 .bat 会抽风（安卓工程里的 gradlew.bat 就是）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # 二进制，别碰
 *.exe binary
 *.png binary

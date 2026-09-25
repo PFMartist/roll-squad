@@ -2,7 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" id="vp" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>
+// 安卓端锁横屏，界面按 1280 宽设计：直接告诉 WebView「CSS 宽度就是 1280」，
+// 六列两行的编队网格在任何手机横屏上都不会被挤成多行（桌面版与网页版不受影响）。
+if (window.__TAURI__ && /Android/i.test(navigator.userAgent)) {
+  document.getElementById('vp').setAttribute('content', 'width=1280, viewport-fit=cover, user-scalable=no');
+}
+</script>
 <meta name="theme-color" content="#242629">
 <title>随机编队 · 明日方舟</title>
 <link rel="icon" href="data:,">
@@ -20,6 +27,7 @@
   <symbol id="ico-copy" viewBox="0 0 24 24"><path d="M8 8h12v13H8zM16 8V3H3v14h5" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
   <symbol id="ico-squad" viewBox="0 0 24 24"><path d="M8 2h8v4l-2 2v5l4 6v3H6v-3l4-6V8L8 6V2Zm3 0v4m2-4v4M8 18h8" fill="none" stroke="currentColor" stroke-width="1.6"/></symbol>
   <symbol id="ico-image" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM3 17l6-6 5 5 3-3 4 4" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="8" r="2" fill="currentColor"/></symbol>
+  <symbol id="ico-import" viewBox="0 0 24 24"><path d="M12 3v10m0 0 4-4m-4 4-4-4M4 16v4h16v-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"/></symbol>
 </svg>
 <div class="screen-frame">
   <header class="topbar">
@@ -29,7 +37,7 @@
       <div class="page-context"><strong>随机行动小组</strong><span>OPERATOR SELECTION</span></div>
     </div>
     <div class="topright">
-      <div class="archive-pick"><label class="pick" for="box">干员档案 <span> / BOX</span></label><select id="box" aria-label="干员档案"><option>读取中…</option></select><span id="box-badge" class="badge" aria-live="polite">读取中…</span></div>
+      <div class="archive-pick"><label class="pick" for="box">干员档案 <span> / BOX</span></label><select id="box" aria-label="干员档案"><option>读取中…</option></select><button id="box-import" class="box-import" type="button" hidden title="导入 MAA 导出的 OperBoxData.json"><svg><use href="#ico-import"/></svg><span>导入</span></button><span id="box-badge" class="badge" aria-live="polite">读取中…</span></div>
       <button class="history-key" type="button" data-open-history><svg><use href="#ico-history"/></svg><span>历史记录</span></button>
       <img class="logo" src="assets/Logo_明日方舟.svg" alt="明日方舟">
     </div>

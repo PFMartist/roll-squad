@@ -1,0 +1,14 @@
+{
+  "name": "roll-squad-app",
+  "private": true,
+  "version": "0.1.4",
+  "description": "随机编队 —— Tauri 外壳（桌面版可直接用 cargo 构建，这里只为命令行工具与安卓打包）",
+  "scripts": {
+    "tauri": "tauri",
+    "android:init": "tauri android init",
+    "android:build": "tauri android build --apk --target x86_64"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

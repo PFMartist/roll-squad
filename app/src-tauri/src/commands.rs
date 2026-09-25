@@ -283,6 +283,78 @@ pub fn save_settings(body: Value) -> Result<Value, String> {
     get_state()
 }
 
+// ---------------------------------------------------------------- 导入 box
+
+/// 文件名里的时间戳（东八区）—— 只给人看先后顺序，为它引 chrono 不值当。
+/// 算法是 Howard Hinnant 的 civil_from_days，把"距 1970 的天数"折回年月日。
+fn now_stamp() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+        + 8 * 3600;
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if month <= 2 { yoe + era * 400 + 1 } else { yoe + era * 400 };
+    let rem = secs % 86_400;
+    format!("{year:04}{month:02}{day:02}-{:02}{:02}", rem / 3600, (rem % 3600) / 60)
+}
+
+/// 用系统文件选择器导入 MAA 导出的干员池（OperBoxData.json）。
+///
+/// 拷一份进数据目录再解析：选择器给的 content:// 授权是临时的，落盘最稳，
+/// 而且安卓上那串 URI 根本没法当路径用（current_box 只认数据目录里的文件）。
+/// 用户点了取消不算出错，返回 {canceled: true} 让界面安静收场。
+#[tauri::command]
+pub async fn import_box(app: tauri::AppHandle) -> Result<Value, String> {
+    use tauri_plugin_dialog::DialogExt;
+    use tauri_plugin_fs::FsExt;
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .set_title("选择 MAA 导出的干员池（OperBoxData.json）")
+        .add_filter("干员池 JSON", &["json"])
+        .pick_file(move |p| {
+            let _ = tx.send(p);
+        });
+    // 选择器异步回调，在这儿等它 —— 命令本身跑在异步线程上，不占主线程
+    let picked = rx.recv().map_err(|_| "文件选择器没有返回结果".to_string())?;
+    let Some(picked) = picked else {
+        return Ok(json!({ "canceled": true, "state": Value::Null }));
+    };
+    let bytes = app.fs().read(picked).map_err(|e| format!("读不到这个文件：{e}"))?;
+
+    let data = paths::data_dir();
+    paths::ensure_dir(&data).map_err(|e| format!("建不了数据目录 {}：{e}", data.display()))?;
+    let stamp = now_stamp();
+    let mut dest = data.join(format!("box_{stamp}.json"));
+    for i in 2..100 {
+        if !dest.exists() {
+            break;
+        }
+        dest = data.join(format!("box_{stamp}-{i}.json"));
+    }
+    std::fs::write(&dest, &bytes).map_err(|e| format!("写入失败 {}：{e}", dest.display()))?;
+
+    // 解析不出干员 = 选错文件了，删掉别污染 box 列表
+    if !matches!(roster::build_roster(&dest), Ok(ops) if !ops.is_empty()) {
+        let _ = std::fs::remove_file(&dest);
+        return Err("这个文件里没解析出干员。请选 MAA「干员识别」导出的 OperBoxData.json。".into());
+    }
+
+    let mut cfg = load_config();
+    cfg.box_file = dest.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    save_config(&cfg)?;
+    Ok(json!({ "canceled": false, "state": get_state()? }))
+}
+
 /// 全量头像预热（全游戏干员，不只是你有的那些）——打包前跑，也供界面手动触发
 #[tauri::command]
 pub fn prefetch_avatars() -> Result<serde_json::Value, String> {

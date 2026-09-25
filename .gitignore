@@ -1,6 +1,9 @@
 # 编译产物
 app/src-tauri/target/
-app/src-tauri/gen/
+# 安卓工程 gen/android 要入库（横屏、图标、签名都改在里面），只忽略 Tauri 生成的 schemas
+app/src-tauri/gen/schemas/
+# 前端依赖：只为了 tauri CLI（安卓打包用），CI 里 npm ci 现装
+app/node_modules/
 
 # 便携包：不进仓库 —— 发版时用 app/package.py 打出来，压成 zip 挂到 Release
 dist/

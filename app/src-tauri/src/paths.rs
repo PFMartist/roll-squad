@@ -3,10 +3,22 @@
 // 便携形态：exe 同级的 data\（整个文件夹拷到哪都能跑）。
 // 开发时（debug 构建）落到 app/devdata\，否则会写进 target\debug\ 里找不到数据。
 // 任何情况下都可用环境变量 ROLL_SQUAD_DATA 覆盖（测试用）。
+// 安卓没有"exe 同级目录"，由 lib.rs 的 setup 调 set_data_dir 指到应用私有目录。
 
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+static OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
+
+/// 只在启动时调一次（安卓：应用私有目录）。设过之后 data_dir() 一律返回它。
+pub fn set_data_dir(p: PathBuf) {
+    let _ = OVERRIDE.set(p);
+}
 
 pub fn data_dir() -> PathBuf {
+    if let Some(p) = OVERRIDE.get() {
+        return p.clone();
+    }
     if let Ok(p) = std::env::var("ROLL_SQUAD_DATA") {
         if !p.is_empty() {
             return PathBuf::from(p);

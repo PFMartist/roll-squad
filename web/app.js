@@ -151,7 +151,10 @@ let busy = false;
 async function api(path, body) {
   if (DEMO) return demoApi(path, body || {});      // 演示模式：不发任何请求
   if (TAURI) {                                     // 桌面版：走 Tauri 命令，不经过 HTTP
-    const cmd = { '/api/state': 'get_state', '/api/roll': 'roll', '/api/settings': 'save_settings' }[path];
+    const cmd = {
+      '/api/state': 'get_state', '/api/roll': 'roll', '/api/settings': 'save_settings',
+      '/api/import-box': 'import_box',
+    }[path];
     if (!cmd) throw new Error(`桌面版没有这个接口：${path}`);
     try {
       // Rust 侧返回 Err(String) 时，invoke 的 reject 拿到的是**字符串**而不是 Error，
@@ -286,7 +289,14 @@ function renderSquad() {
     </div>`;
   }).join('');
   for (let i = squad.length; i < positions; i++) cards += emptyPosition(i);
-  if (!squad.length) cards += `<div class="empty-overlay"><div class="empty"><span class="empty-label">SQUAD / STANDBY</span><h3>等待干员编入</h3><p>选择抽取规则，点击右下角 <b>开始编队</b>。</p></div></div>`;
+  // 一份 box 都没有时（新装的桌面版/安卓端），直接在这儿给个导入入口，
+  // 不然用户只会看到一句「等待干员编入」，不知道该干什么。
+  const needBox = !DEMO && TAURI && !ST.roster;
+  if (!squad.length) cards += `<div class="empty-overlay"><div class="empty"><span class="empty-label">SQUAD / STANDBY</span>${
+    needBox
+      ? `<h3>还没有干员档案</h3><p>导入 MAA「干员识别」导出的 <b>OperBoxData.json</b>，就能开始抽签。</p>` +
+        `<button type="button" class="import-cta" data-import-box>${uiIcon('import')}导入干员档案</button>`
+      : '<h3>等待干员编入</h3><p>选择抽取规则，点击右下角 <b>开始编队</b>。</p>'}</div></div>`;
   $('#squad').innerHTML = cards;
   if (ST) renderRail();
   syncThemeStatus();
@@ -429,6 +439,8 @@ async function roll({ respin = null, over = null } = {}) {
 
 /** 跟 ST 走的那几块重画（换 box 之后要整体刷一遍）。 */
 function syncControls() {
+  // 导入按钮只在有文件系统的宿主里出现（桌面版、安卓端）；浏览器版与演示版藏起来
+  $('#box-import').hidden = !(TAURI && !DEMO);
   const keepTier = $('#tier').value;          // 重建 option 会把选中项冲掉，先记下
   $('#tier').innerHTML = Object.entries(ST.tiers)
     .map(([t, v]) => `<option value="${t}">${t} · ${v.desc}（${v.n} 人）</option>`).join('');
@@ -493,6 +505,26 @@ async function onAvatarsToggle(e) {
   }
 }
 
+/** 导入干员档案：走系统文件选择器（桌面版与安卓端都走这条路）。
+ *  用户点了取消时后端返回 canceled，这里什么都不做，别报错吓人。 */
+async function onImportBox() {
+  const btn = $('#box-import');
+  btn.disabled = true;
+  try {
+    const r = await api('/api/import-box');
+    if (r && r.canceled) return;
+    ST = r.state;
+    locked.clear();
+    syncControls();
+    applyDefaults();
+    renderEmpty();
+  } catch (err) {
+    renderError(`导入失败：${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function onBoxChange(e) {
   try {
     ST = await api('/api/settings', { box: e.target.value });
@@ -533,6 +565,7 @@ async function boot() {
   $('#roll').onclick = () => roll();
   $('#avatars').onchange = onAvatarsToggle;
   $('#box').onchange = onBoxChange;
+  $('#box-import').onclick = onImportBox;
   $('#stars').onchange = syncStarChips;
   $('#rail').onclick = (e) => {
     const b = e.target.closest('button[data-rail]');
@@ -541,6 +574,7 @@ async function boot() {
     renderRail();
   };
   $('#squad').onclick = (e) => {
+    if (e.target.closest('[data-import-box]')) { onImportBox(); return; }
     const card = e.target.closest('.card');
     const btn = e.target.closest('button[data-act]');
     if (!card || !btn) return;

@@ -1,0 +1,84 @@
+name: 安卓 APK
+
+# 前端（web/）与桌面外壳（app/）是同一份代码，安卓包在这里出。
+# GitHub 的 ubuntu runner 自带 Android SDK，所以只需要补 platform / build-tools / NDK。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'app/**'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'app/**'
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write      # 往 Release 挂 APK 需要写权限
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 装 Node（Gradle 会回调 tauri CLI，必须有）
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: 装 Rust 与安卓目标
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: 装 JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: 补 Android SDK / NDK
+        run: |
+          set -e
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.13846066"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> "$GITHUB_ENV"
+
+      - name: 装前端依赖
+        working-directory: app
+        run: npm ci
+
+      # aarch64 = 真机；x86_64 = 模拟器（MuMu / Android Studio AVD）
+      - name: 打 APK
+        working-directory: app
+        run: npx tauri android build --apk --ci -t aarch64 x86_64
+
+      - name: 收产物
+        run: |
+          mkdir -p out
+          find app/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -exec cp {} out/ \;
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roll-squad-apk
+          path: out/*.apk
+          if-no-files-found: error
+
+      - name: 挂到 Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.apk
