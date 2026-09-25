@@ -25,27 +25,38 @@ const PROF_ICON = (p, v = '') => `${ASSET}/图标_职业_${p}_大图${v}.png`;
 const ELITE_ICON = (e) => `${ASSET}/图标_升级_精英化${e}.png`;
 let railFilter = null;      // 右侧竖栏选中哪个职业（= 只高亮这个职业的卡）
 
-/** 演示干员池：assets/demo_roster.js 里的紧凑数组 → 统一形状（字段名跟后端返回的一致） */
-const DEMO_ROSTER = (typeof window !== 'undefined' && window.DEMO_ROSTER) || { profs: [], ops: [] };
+/** 演示干员池：assets/demo_roster.js 里的紧凑数组 → 统一形状（字段名跟后端返回的一致）。
+    里面装着**两份**池子，BOX 下拉里可切换：
+      · spread —— 练度洒开，六个档位人数互不相同，用来看筛选差别（默认）
+      · max    —— 全干员满练度，人人顶格 */
+const DEMO_ROSTER = (typeof window !== 'undefined' && window.DEMO_ROSTER) || { profs: [], pools: {} };
 const DEMO_PROFS = DEMO_ROSTER.profs.length
   ? DEMO_ROSTER.profs
   : ['先锋', '近卫', '重装', '狙击', '术师', '医疗', '辅助', '特种'];
-const DEMO_OPS = (DEMO_ROSTER.ops || []).map(([name, rarity, elite, level, prof, potential]) => ({
+const toDemoOps = (arr) => (arr || []).map(([name, rarity, elite, level, prof, potential]) => ({
   id: name, name, rarity, elite, level, potential, profession: DEMO_PROFS[prof],
 }));
+const DEMO_POOLS = Object.fromEntries(Object.entries(DEMO_ROSTER.pools || {})
+  .map(([key, p]) => [key, { label: p.label || key, ops: toDemoOps(p.ops) }]));
+const DEMO_POOL_KEYS = Object.keys(DEMO_POOLS);
+let demoPool = DEMO_POOL_KEYS[0] || '';        // 当前用哪份池子（演示模式下的"换 box"）
+const demoOps = () => (DEMO_POOLS[demoPool] || {}).ops || [];
+const demoIsMax = () => demoPool === 'max';
 
 /** 演示干员库对应的游戏版本（由 app/make_demo_roster.py 写进 demo_roster.js）——
     页脚、BOX 下拉、徽章提示、演示横幅都用它，别在别处硬编码版本号。 */
 const DEMO_VER = DEMO_ROSTER.version
   ? `${DEMO_ROSTER.version}${DEMO_ROSTER.versionName ? `「${DEMO_ROSTER.versionName}」` : ''}`
   : '';
-/** 演示数据的两个前提，界面上要说清楚：对应哪个游戏版本、练度是合成值 */
-const DEMO_VER_SHORT = DEMO_VER ? `演示数据 ${DEMO_ROSTER.version} 版 · 练度为随机演示值` : '';
+/** 演示数据的两个前提，界面上要说清楚：对应哪个游戏版本、练度是什么性质（随池子变） */
+const demoVerShort = () => (DEMO_VER
+  ? `演示数据 ${DEMO_ROSTER.version} 版 · ${demoIsMax() ? '全干员满练度' : '练度为随机演示值'}`
+  : '');
 const DEMO_VER_LONG = DEMO_VER
   ? `演示干员库对应 ${DEMO_VER}：该批次新增 ${(DEMO_ROSTER.newest || []).join('、')}；` +
     `解包主表快照抓取于 ${DEMO_ROSTER.snapshot}。` +
-    '精英化与等级是随机分配的演示值（不是任何人的真实练度），' +
-    '这样六个档位的人数才互不相同、能看出筛选差别。'
+    '两份内置池子：随机练度那份的精英化与等级是合成值（不是任何人的真实练度），' +
+    '为的是让六个档位人数互不相同；全干员满练度那份人人顶格，档位人数会有两组相同。'
   : '';
 
 /* 档位判定 —— 与 Rust 侧 roster.rs 的 tier_pass 同一套规则，演示模式也得跟着走。
@@ -69,20 +80,23 @@ function tierPass(op, tier) {
 }
 
 function demoState() {
+  const ops = demoOps();
+  const pool = DEMO_POOLS[demoPool];
   return {
-    demo: true, roster: DEMO_OPS.length,
+    demo: true, roster: ops.length,
     box: {
-      file: `演示数据（全游戏干员${DEMO_ROSTER.version ? ` · ${DEMO_ROSTER.version}` : ''}）`,
-      path: '', sync: null, age_days: null, stale: false,
+      file: pool ? pool.label : '演示数据',
+      path: demoPool, sync: null, age_days: null, stale: false,
     },
-    box_options: [],
+    // 两份内置池子都列出来，BOX 下拉里可切换（demoApi 的 /api/settings 负责接）
+    box_options: DEMO_POOL_KEYS.map((k) => ({ file: k, name: DEMO_POOLS[k].label, sync: null })),
     // 演示/在线模式不带干员立绘：头像固定关闭，开关也锁住（见 syncControls）
     avatars_enabled: false, avatars_locked: true,
     tiers: Object.fromEntries(Array.from({ length: TIER_MAX + 1 }, (_, t) => {
-      const pool = DEMO_OPS.filter((o) => tierPass(o, t));
+      const done = ops.filter((o) => tierPass(o, t));
       const prof = {};
-      pool.forEach((o) => { prof[o.profession] = (prof[o.profession] || 0) + 1; });
-      return [t, { n: pool.length, desc: TIER_DESC[t], prof }];
+      done.forEach((o) => { prof[o.profession] = (prof[o.profession] || 0) + 1; });
+      return [t, { n: done.length, desc: TIER_DESC[t], prof }];
     })),
     professions: DEMO_PROFS, floor: { 先锋: 1, 医疗: 1, 重装: 1 }, history: [],
     defaults: { tier: 0, mode: 'quota', n: 12, avoid_last: 1, exclude: '', rarities: [1, 2, 3, 4, 5, 6], quota: { 先锋: 1, 医疗: 1, 重装: 1 } },
@@ -91,16 +105,23 @@ function demoState() {
 }
 
 function demoApi(path, body) {
-  if (path === '/api/state' || path === '/api/settings') return demoState();
+  if (path === '/api/state') return demoState();
+  if (path === '/api/settings') {
+    // 演示模式的"换 box" = 在内置的两份池子之间切换
+    const want = body && body.box;
+    if (want && DEMO_POOLS[want]) demoPool = want;
+    return demoState();
+  }
   if (path !== '/api/roll') throw new Error(`演示模式没有这个接口：${path}`);
-  if (!DEMO_OPS.length) throw new Error('演示干员池没加载（assets/demo_roster.js 缺失或被挡了）');
+  const ops = demoOps();
+  if (!ops.length) throw new Error('演示干员池没加载（assets/demo_roster.js 缺失或被挡了）');
   const n = body.n || 12;
-  const byId = Object.fromEntries(DEMO_OPS.map((o) => [o.id, o]));
+  const byId = Object.fromEntries(ops.map((o) => [o.id, o]));
   const rar = (body.rarities && body.rarities.length) ? body.rarities : [1, 2, 3, 4, 5, 6];
   const tier = body.tier || 0;
   const slots = (body.slots && body.slots.length === n) ? body.slots.slice() : new Array(n).fill(null);
   const used = new Set(slots.filter((id) => id && byId[id]));
-  const pool = DEMO_OPS.filter((o) => rar.includes(o.rarity) && tierPass(o, tier) && !used.has(o.id));
+  const pool = ops.filter((o) => rar.includes(o.rarity) && tierPass(o, tier) && !used.has(o.id));
   const squad = slots.map((id) => {
     if (id && byId[id]) return byId[id];
     return pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
@@ -109,8 +130,8 @@ function demoApi(path, body) {
     squad, seed: Math.floor(Math.random() * 1e9), mode: body.mode || 'floor', tier, n,
     quota: body.quota || null,
     pool: {
-      roster: DEMO_OPS.length,
-      after_tier: DEMO_OPS.filter((o) => tierPass(o, tier)).length,
+      roster: ops.length,
+      after_tier: ops.filter((o) => tierPass(o, tier)).length,
       after_filter: pool.length + squad.length,
     },
     time: new Date().toISOString().slice(0, 19),
@@ -202,7 +223,7 @@ function renderBoxPick() {
   }
   sel.innerHTML = opts.map((o) =>
     `<option value="${esc(o.file)}"${o.file === ST.box.path ? ' selected' : ''}>` +
-    `${esc(o.name)}${o.sync ? ` · ${o.sync}` : ''}${o.size_kb ? '' : '（当前）'}</option>`).join('');
+    `${esc(o.name)}${o.sync ? ` · ${o.sync}` : ''}${o.file === ST.box.path ? '（当前）' : ''}</option>`).join('');
 }
 
 function updatePoolInfo() {
@@ -428,16 +449,35 @@ function syncControls() {
   renderHistory();
   updatePoolInfo();
   renderDemoVersion();
+  renderDemoBanner();
 }
 
-/** 页脚常驻一行：演示干员库对应的游戏版本 + 练度是演示值（在线试用时一眼能看出数据性质） */
+/** 页脚常驻一行：演示干员库对应的游戏版本 + 当前池子的练度性质（在线试用时一眼能看出数据性质）。
+    文案随池子变（随机练度 / 满练度），所以每次 syncControls 都刷一遍。 */
 function renderDemoVersion() {
   const src = document.querySelector('.footer-source');
-  if (!src || !DEMO || !DEMO_ROSTER.version || src.dataset.demoVer) return;
-  src.dataset.demoVer = '1';
-  src.insertAdjacentHTML('beforeend',
-    ` <span class="footer-sep">/</span> <span title="${esc(DEMO_VER_LONG)}">` +
-    `${esc(DEMO_VER_SHORT)}</span>`);
+  if (!src || !DEMO || !DEMO_ROSTER.version) return;
+  let el = src.querySelector('.demo-ver');
+  if (!el) {
+    src.insertAdjacentHTML('beforeend', ' <span class="footer-sep">/</span> <span class="demo-ver"></span>');
+    el = src.querySelector('.demo-ver');
+  }
+  el.title = DEMO_VER_LONG;
+  el.textContent = demoVerShort();
+}
+
+/** 演示横幅（只在"没连上后端自动进演示"时出现）：说清看的是什么数据、怎么换 */
+function renderDemoBanner() {
+  if (!autoDemo) return;
+  const n = demoOps().length;
+  const tail = demoIsMax()
+    ? '当前是<b>全干员满练度</b>：人人顶格，所以「精一+／精一满级」「精二／模组线」人数相同；' +
+      '想看六个档位的筛选差别，就在上面的下拉里换成随机练度那份。'
+    : '这一份的精英化与等级是<b>随机分配的演示值</b>，用来看出六个档位的筛选差别；' +
+      '下拉里还能换成全干员满练度那份。';
+  $('#warnings').innerHTML = '<div>没连上本地服务，已切到<b>内置演示数据</b>' +
+    `（全游戏 ${n} 名${DEMO_VER ? ` · ${esc(DEMO_VER)}` : ''}）。${tail}` +
+    '这里也没有立绘，卡片走职业色块。要抽自己的干员池，请下载桌面版。</div>';
 }
 
 async function onAvatarsToggle(e) {
@@ -485,14 +525,8 @@ async function boot() {
     .map((p) => `<label title="${p}"><img src="${PROF_ICON(p)}" alt="${p}">` +
       `<span>${esc(p)}</span><input type="number" min="0" max="13" value="${ST.floor[p] || 0}" data-prof="${p}" aria-label="${esc(p)}配额"></label>`)
     .join('');
-  syncControls();
+  syncControls();          // 里面会按当前池子刷页脚那行与演示横幅
   applyDefaults();
-  if (autoDemo) {
-    $('#warnings').innerHTML = '<div>没连上本地服务，已切到<b>内置演示数据</b>' +
-      `（全游戏 ${DEMO_OPS.length} 名${DEMO_VER ? ` · ${esc(DEMO_VER)}` : ''}）。` +
-      '精英化与等级是<b>随机分配的演示值</b>，用来看出六个档位的筛选差别；' +
-      '这里也没有立绘，卡片走职业色块。要抽自己的干员池，请下载桌面版。</div>';
-  }
 
   $('#mode').onchange = () => { $('#quota-panel').hidden = $('#mode').value !== 'quota'; };
   $('#tier').onchange = updatePoolInfo;

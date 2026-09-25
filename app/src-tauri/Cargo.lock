@@ -2744,7 +2744,7 @@ dependencies = [
 
 [[package]]
 name = "roll-squad"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "percent-encoding",
  "rand 0.9.5",
