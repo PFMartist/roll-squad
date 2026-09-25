@@ -38,20 +38,37 @@ const DEMO_OPS = [
   { id: 'd16', name: 'THRM-EX', profession: '特种', rarity: 1, elite: 0, level: 30, potential: 6 },
 ].map((o) => ({ ...o, img: `${ASSET}/demo/${o.id}.png` }));
 
+/* 档位判定 —— 与 Rust 侧 roster.rs 的 tier_pass 同一套规则，演示模式也得跟着走。
+   其中 2 = 精一满级、4 = 模组线，这两条线**按星级变化**，数值取自官方数据：
+   E1_CAP = 主表 phases[1].maxLevel；MODULE_GATE = uniequip_table.json 的解锁条件。 */
+const E1_CAP = { 3: 55, 4: 60, 5: 70, 6: 80 };
+const MODULE_GATE = { 4: 40, 5: 50, 6: 60 };
+const TIER_MAX = 5;
+const TIER_DESC = {
+  0: '全部持有', 1: '精一及以上', 2: '精一满级（按星级）',
+  3: '精二', 4: '模组线（按星级）', 5: '精二且 Lv≥80',
+};
+
+function tierPass(op, tier) {
+  const line = (v) => (v === undefined ? Infinity : v);   // 该星级没有这条线 → 永远过不去
+  // 「精一满级」：精英化会重置等级（有人 E2 却不到 E1 上限），但升精二的前提就是精一满级 → E2 一律算过
+  if (tier === 2) return op.elite >= 2 || (op.elite >= 1 && op.level >= line(E1_CAP[op.rarity]));
+  if (tier === 4) return op.elite >= 2 && op.level >= line(MODULE_GATE[op.rarity]);
+  const [e, l] = { 1: [1, 0], 3: [2, 0], 5: [2, 80] }[tier] || [0, 0];
+  return op.elite >= e && op.level >= l;
+}
+
 function demoState() {
-  const prof = {};
-  DEMO_OPS.forEach((o) => { prof[o.profession] = (prof[o.profession] || 0) + 1; });
-  const tier = (minE) => DEMO_OPS.filter((o) => o.elite >= minE).length;
   return {
     demo: true, roster: DEMO_OPS.length,
     box: { file: '演示数据（内置）', path: '', sync: null, age_days: null, stale: false },
     box_options: [], avatars_enabled: true,
-    tiers: {
-      0: { n: DEMO_OPS.length, desc: '全部持有', prof },
-      1: { n: tier(1), desc: '精一及以上', prof },
-      2: { n: tier(2), desc: '精二', prof },
-      3: { n: DEMO_OPS.filter((o) => o.elite >= 2 && o.level >= 80).length, desc: '精二且 Lv≥80', prof },
-    },
+    tiers: Object.fromEntries(Array.from({ length: TIER_MAX + 1 }, (_, t) => {
+      const pool = DEMO_OPS.filter((o) => tierPass(o, t));
+      const prof = {};
+      pool.forEach((o) => { prof[o.profession] = (prof[o.profession] || 0) + 1; });
+      return [t, { n: pool.length, desc: TIER_DESC[t], prof }];
+    })),
     professions: DEMO_PROFS, floor: { 先锋: 1, 医疗: 1, 重装: 1 }, history: [],
     defaults: { tier: 0, mode: 'quota', n: 12, avoid_last: 1, exclude: '', rarities: [1, 2, 3, 4, 5, 6], quota: { 先锋: 1, 医疗: 1, 重装: 1 } },
     modes: { floor: '保底队形', pure: '纯随机', quota: '精确配额' },
@@ -64,18 +81,22 @@ function demoApi(path, body) {
   const n = body.n || 12;
   const byId = Object.fromEntries(DEMO_OPS.map((o) => [o.id, o]));
   const rar = (body.rarities && body.rarities.length) ? body.rarities : [1, 2, 3, 4, 5, 6];
-  const minE = body.tier >= 2 ? 2 : (body.tier >= 1 ? 1 : 0);
+  const tier = body.tier || 0;
   const slots = (body.slots && body.slots.length === n) ? body.slots.slice() : new Array(n).fill(null);
   const used = new Set(slots.filter((id) => id && byId[id]));
-  const pool = DEMO_OPS.filter((o) => rar.includes(o.rarity) && o.elite >= minE && !used.has(o.id));
+  const pool = DEMO_OPS.filter((o) => rar.includes(o.rarity) && tierPass(o, tier) && !used.has(o.id));
   const squad = slots.map((id) => {
     if (id && byId[id]) return byId[id];
     return pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
   }).filter(Boolean);
   return {
-    squad, seed: Math.floor(Math.random() * 1e9), mode: body.mode || 'floor', tier: body.tier || 0, n,
+    squad, seed: Math.floor(Math.random() * 1e9), mode: body.mode || 'floor', tier, n,
     quota: body.quota || null,
-    pool: { roster: DEMO_OPS.length, after_tier: DEMO_OPS.length, after_filter: pool.length + squad.length },
+    pool: {
+      roster: DEMO_OPS.length,
+      after_tier: DEMO_OPS.filter((o) => tierPass(o, tier)).length,
+      after_filter: pool.length + squad.length,
+    },
     time: new Date().toISOString().slice(0, 19),
     warnings: ['演示模式：内置假数据，不连后端、不写历史'], history_file: null, session: null,
   };

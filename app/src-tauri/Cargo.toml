@@ -1,6 +1,6 @@
 [package]
 name = "roll-squad"
-version = "0.1.0"
+version = "0.1.1"
 description = "随机编队 —— 从自己的干员池里抽一队"
 edition = "2021"
 rust-version = "1.77"
