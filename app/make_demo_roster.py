@@ -37,15 +37,14 @@ WS = ROOT.parent                                  # 仓库根
 DEFAULT_OUT = WS / "web" / "assets" / "demo_roster.js"
 
 # ---------------------------------------------------------------- 游戏版本
-# 演示干员库对应哪一版游戏数据 —— **刷新主表后请一并更新这几行**。
-#
-# ⚠ 别用「char_ID 最大的干员」当最新：**联动干员的 ID 是提前分配的**，
-#   比如女神异闻录联动的结城理是 char_4217，反而比 8 月夏日限定的 char_4237 小。
-#   所以这里手写权威值（以 PRTS 各干员页的「上线时间」为准），脚本只做存在性核对。
-GAME_VERSION = "2026-09-04"                          # 最后一批新干员的上线日期
-GAME_VERSION_NAME = "石白深蓝之夜（女神异闻录3 Reload 联动）"   # 那批干员所属的活动/版本
-SNAPSHOT = "2026-09-22"                             # 主表快照的抓取日期
-NEWEST_BATCH = ["结城理", "岳羽由加莉", "埃癸斯", "虎狼丸"]      # 该批次新增的干员
+# 版本信息集中在 app/demo_meta.py（跟 make_demo_box.py 共用一份），出新人只改那儿。
+sys.path.insert(0, str(ROOT))
+import demo_meta as META       # noqa: E402
+
+GAME_VERSION = META.GAME_VERSION
+GAME_VERSION_NAME = META.GAME_VERSION_NAME
+SNAPSHOT = META.SNAPSHOT
+NEWEST_BATCH = META.NEWEST_BATCH
 
 PROFS = ["先锋", "近卫", "重装", "狙击", "术师", "医疗", "辅助", "特种"]
 PROF_EN2CN = {
