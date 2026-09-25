@@ -39,9 +39,13 @@ const DEMO_OPS = (DEMO_ROSTER.ops || []).map(([name, rarity, elite, level, prof,
 const DEMO_VER = DEMO_ROSTER.version
   ? `${DEMO_ROSTER.version}${DEMO_ROSTER.versionName ? `「${DEMO_ROSTER.versionName}」` : ''}`
   : '';
+/** 演示数据的两个前提，界面上要说清楚：对应哪个游戏版本、练度是合成值 */
+const DEMO_VER_SHORT = DEMO_VER ? `演示数据 ${DEMO_ROSTER.version} 版 · 练度为随机演示值` : '';
 const DEMO_VER_LONG = DEMO_VER
   ? `演示干员库对应 ${DEMO_VER}：该批次新增 ${(DEMO_ROSTER.newest || []).join('、')}；` +
-    `解包主表快照抓取于 ${DEMO_ROSTER.snapshot}。游戏出新干员后需重新生成（app/make_demo_roster.py）。`
+    `解包主表快照抓取于 ${DEMO_ROSTER.snapshot}。` +
+    '精英化与等级是随机分配的演示值（不是任何人的真实练度），' +
+    '这样六个档位的人数才互不相同、能看出筛选差别。'
   : '';
 
 /* 档位判定 —— 与 Rust 侧 roster.rs 的 tier_pass 同一套规则，演示模式也得跟着走。
@@ -426,14 +430,14 @@ function syncControls() {
   renderDemoVersion();
 }
 
-/** 页脚常驻一行：演示干员库对应的游戏版本（在线试用时一眼能看出数据有多新） */
+/** 页脚常驻一行：演示干员库对应的游戏版本 + 练度是演示值（在线试用时一眼能看出数据性质） */
 function renderDemoVersion() {
   const src = document.querySelector('.footer-source');
   if (!src || !DEMO || !DEMO_ROSTER.version || src.dataset.demoVer) return;
   src.dataset.demoVer = '1';
   src.insertAdjacentHTML('beforeend',
     ` <span class="footer-sep">/</span> <span title="${esc(DEMO_VER_LONG)}">` +
-    `演示数据 ${esc(DEMO_ROSTER.version)} 版</span>`);
+    `${esc(DEMO_VER_SHORT)}</span>`);
 }
 
 async function onAvatarsToggle(e) {
@@ -486,7 +490,8 @@ async function boot() {
   if (autoDemo) {
     $('#warnings').innerHTML = '<div>没连上本地服务，已切到<b>内置演示数据</b>' +
       `（全游戏 ${DEMO_OPS.length} 名${DEMO_VER ? ` · ${esc(DEMO_VER)}` : ''}）。` +
-      '这里没有立绘，卡片走职业色块；要抽自己的干员池，请下载桌面版。</div>';
+      '精英化与等级是<b>随机分配的演示值</b>，用来看出六个档位的筛选差别；' +
+      '这里也没有立绘，卡片走职业色块。要抽自己的干员池，请下载桌面版。</div>';
   }
 
   $('#mode').onchange = () => { $('#quota-panel').hidden = $('#mode').value !== 'quota'; };
