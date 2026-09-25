@@ -114,17 +114,45 @@ function Save-Png([System.Drawing.Bitmap]$bmp, [string]$path) {
   $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
 }
 
-# 单帧 ico 的字节（借 Icon.Save 写 DIB 帧：小尺寸下比 PNG 帧兼容性好）
+# 单帧 ico 的字节：自己拼 32 位 DIB 帧（BITMAPINFOHEADER + 自底向上的 BGRA + AND 掩码）。
+# 别用 Icon.Save 偷懒 —— 它会把 GetHicon() 的位图降成 4 位（16 色）调色板，
+# 黑底 + 抗锯齿白图在 16 色下会出色带，大尺寸尤其明显。
 function Get-IcoFrame([System.Drawing.Bitmap]$bmp) {
-  $h = $bmp.GetHicon()
-  $icon = [System.Drawing.Icon]::FromHandle($h)
+  $w = $bmp.Width; $h = $bmp.Height
+  $rect = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
+  $data = $bmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly,
+                        [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+  $stride = $data.Stride
+  [byte[]]$px = New-Object byte[] ($stride * $h)
+  [Runtime.InteropServices.Marshal]::Copy($data.Scan0, $px, 0, $px.Length)
+  $bmp.UnlockBits($data)
+
+  # XOR 位图：DIB 是自底向上存的
+  [byte[]]$xor = New-Object byte[] ($w * $h * 4)
+  for ($y = 0; $y -lt $h; $y++) {
+    [Array]::Copy($px, ($h - 1 - $y) * $stride, $xor, $y * $w * 4, $w * 4)
+  }
+  # AND 掩码：32 位图靠 alpha 表达透明，掩码全 0 即可（每行按 4 字节对齐）
+  $andRow = [int]([Math]::Ceiling($w / 32.0) * 4)
+  [byte[]]$and = New-Object byte[] ($andRow * $h)
+
   $ms = [IO.MemoryStream]::new()
-  $icon.Save($ms)
-  $icon.Dispose()
-  $b = $ms.ToArray(); $ms.Dispose()
-  # 切片出来是 Object[]，BinaryWriter 只认 byte[]，必须显式转换
-  [byte[]]$entry = $b[6..21]
-  [byte[]]$payload = $b[22..($b.Length - 1)]
+  $bw = [IO.BinaryWriter]::new($ms)
+  $bw.Write([UInt32]40); $bw.Write([Int32]$w); $bw.Write([Int32]($h * 2))
+  $bw.Write([UInt16]1); $bw.Write([UInt16]32); $bw.Write([UInt32]0)
+  $bw.Write([Int32]($w * $h * 4)); $bw.Write([Int32]0); $bw.Write([Int32]0)
+  $bw.Write([UInt32]0); $bw.Write([UInt32]0)
+  $bw.Write($xor, 0, $xor.Length)
+  $bw.Write($and, 0, $and.Length)
+  $bw.Flush()
+  [byte[]]$payload = $ms.ToArray()
+  $bw.Dispose(); $ms.Dispose()
+
+  [byte[]]$entry = New-Object byte[] 16
+  $entry[0] = if ($w -ge 256) { 0 } else { [byte]$w }
+  $entry[1] = if ($h -ge 256) { 0 } else { [byte]$h }
+  $entry[4] = 1; $entry[6] = 32
+  [BitConverter]::GetBytes([UInt32]$payload.Length).CopyTo($entry, 8)
   return , @{ entry = $entry; data = $payload }
 }
 
