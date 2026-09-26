@@ -63,7 +63,7 @@ pub fn filter_pool(
                 return false;
             }
             if let Some(rs) = rarities {
-                if !rs.is_empty() && !rs.contains(&o.rarity) {
+                if !rs.contains(&o.rarity) {
                     return false;
                 }
             }
@@ -130,13 +130,16 @@ pub fn compose(
                 Some(q) => q.clone(),
                 None => default_floor(),
             };
-            let total: u32 = target.values().sum();
-            if total as usize > empty {
-                warnings.push(format!("配额共 {total} 席 > 空位 {empty} 席，超出部分已忽略"));
-            }
             let mut kept: HashMap<String, usize> = HashMap::new();
             for s in resolved.iter().flatten() {
                 *kept.entry(s.profession.clone()).or_default() += 1;
+            }
+            let remaining_required: usize = PROFESSION_ORDER.iter()
+                .map(|prof| (target.get(*prof).copied().unwrap_or(0) as usize)
+                    .saturating_sub(kept.get(*prof).copied().unwrap_or(0)))
+                .sum();
+            if remaining_required > empty {
+                warnings.push(format!("剩余配额共 {remaining_required} 席 > 空位 {empty} 席，超出部分已忽略"));
             }
             let mut used = taken.clone();
             let mut left = empty;
@@ -246,10 +249,29 @@ pub fn recent_ids(avoid_last: u32) -> HashSet<String> {
         .collect()
 }
 
+/// 已锁定的槽位仍参与本轮抽取；历史规避只作用于其余干员。
+fn avoid_without_locked(mut avoid: HashSet<String>, slots: Option<&[Option<String>]>) -> HashSet<String> {
+    if let Some(slots) = slots {
+        for id in slots.iter().flatten() {
+            avoid.remove(id);
+        }
+    }
+    avoid
+}
+
 // ---------------------------------------------------------------- 主流程
 
 pub fn build_and_roll(roster: &[Operator], req: &RollReq) -> Result<RollOutcome, String> {
     let n = req.n.max(1);
+
+    if let Some(rarities) = &req.rarities {
+        if rarities.is_empty() {
+            return Err("星级一档都没选 —— 至少留一档".into());
+        }
+        if rarities.iter().any(|r| !(1..=6).contains(r)) {
+            return Err("星级只能是 1~6".into());
+        }
+    }
 
     // 模式归一：老的 "floor" 并入 "quota"（两者本就是同一机制）
     let mode = match req.mode.as_str() {
@@ -274,8 +296,8 @@ pub fn build_and_roll(roster: &[Operator], req: &RollReq) -> Result<RollOutcome,
     let min_level = req.min_level.unwrap_or(0);
     let after_tier = crate::roster::apply_tier(roster, req.tier, req.min_elite, req.min_level);
 
-    let mut excluded: HashSet<String> = req.exclude.iter().cloned().collect();
-    let avoid = recent_ids(req.avoid_last);
+    let excluded: HashSet<String> = req.exclude.iter().cloned().collect();
+    let avoid = avoid_without_locked(recent_ids(req.avoid_last), req.slots.as_deref());
     let mut warnings: Vec<String> = Vec::new();
 
     let with_avoid: HashSet<String> = excluded.union(&avoid).cloned().collect();
@@ -307,9 +329,6 @@ pub fn build_and_roll(roster: &[Operator], req: &RollReq) -> Result<RollOutcome,
             ));
             pool = relaxed;
         }
-    }
-    if pool.is_empty() {
-        excluded.clear();
     }
     if pool.len() < n {
         return Err(format!(
@@ -488,5 +507,44 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(1);
         let err = compose(&pool, 3, "pure", None, None, &mut rng).unwrap_err();
         assert!(err.contains("凑不满"), "错误信息要能看懂：{err}");
+    }
+
+    #[test]
+    fn locked_operator_is_exempt_from_history_avoidance() {
+        let pool = vec![
+            op("a", "甲", "先锋", vec![]), op("b", "乙", "近卫", vec![]),
+            op("c", "丙", "重装", vec![]), op("d", "丁", "狙击", vec![]),
+        ];
+        let slots = vec![Some("a".to_string()), None];
+        let avoid = avoid_without_locked(
+            HashSet::from(["a".to_string(), "b".to_string()]), Some(&slots),
+        );
+        let filtered = filter_pool(&pool, 0, 0, None, 0, None, &avoid);
+        let mut rng = StdRng::seed_from_u64(5);
+        let (squad, warnings) = compose(&filtered, 2, "pure", None, Some(slots), &mut rng).unwrap();
+        assert_eq!(squad[0].id, "a");
+        assert!(!squad.iter().any(|o| o.id == "b"));
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn fulfilled_quota_from_locked_slot_does_not_warn() {
+        let pool = vec![
+            op("a", "甲", "先锋", vec![]), op("b", "乙", "医疗", vec![]),
+        ];
+        let quota = HashMap::from([("先锋".to_string(), 1), ("医疗".to_string(), 1)]);
+        let mut rng = StdRng::seed_from_u64(8);
+        let slots = Some(vec![Some("a".to_string()), None]);
+        let (squad, warnings) = compose(&pool, 2, "quota", Some(&quota), slots, &mut rng).unwrap();
+        assert_eq!(squad[0].id, "a");
+        assert_eq!(squad[1].id, "b");
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn empty_rarity_selection_errors() {
+        let req = RollReq { rarities: Some(vec![]), n: 1, ..RollReq::default() };
+        let err = build_and_roll(&[op("a", "甲", "先锋", vec![])], &req).err().unwrap();
+        assert!(err.contains("至少留一档"));
     }
 }

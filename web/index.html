@@ -43,6 +43,10 @@ if (window.__TAURI__ && /Android/i.test(navigator.userAgent)) {
     </div>
   </header>
 
+  <div id="warnings" class="warnings" role="status" aria-live="polite" aria-atomic="true" hidden>
+    <span class="notice-label"></span><span class="notice-text"></span>
+  </div>
+
   <main class="workspace">
     <section class="selection-bar" aria-label="编队筛选">
       <div class="selection-title"><svg><use href="#ico-squad"/></svg><div><h2>干员选择</h2><span id="selection-state">等待编队</span></div></div>
@@ -74,8 +78,6 @@ if (window.__TAURI__ && /Android/i.test(navigator.userAgent)) {
       </div>
       <nav id="rail" class="rail" aria-label="按职业高亮"></nav>
     </div>
-    <div id="warnings" class="warnings" role="status" aria-live="polite"></div>
-
     <section class="command-bar" aria-label="编队结果与操作">
       <div class="squad-readout"><div class="squad-count"><b id="squad-count">00</b><span>/ <span id="squad-target">12</span></span></div><div class="squad-readout-label"><strong>当前编队</strong><span id="lock-count">尚未选择干员</span></div></div>
       <div id="summary" class="summary"></div>
@@ -96,8 +98,8 @@ if (window.__TAURI__ && /Android/i.test(navigator.userAgent)) {
         <div class="setting-row"><div class="setting-description"><h4>避开上一轮</h4><p>抽取时避开上一轮的未锁定干员，锁定槽位仍保留。</p></div><label class="toggle"><input id="avoid" type="checkbox" checked><span class="switch-track"><span class="switch-on">开启</span><span class="switch-off">关闭</span><span class="switch-thumb"></span></span><span class="sr-only">避开上一轮</span></label></div>
         <div class="setting-row"><label class="setting-description" for="seed"><h4>随机种子</h4><p>留空为随机；固定种子用于相同参数下重放。</p></label><input id="seed" type="text" inputmode="numeric" placeholder="随机"></div>
         <div class="setting-row exclude-row"><label class="setting-description" for="exclude"><h4>排除干员</h4><p>填写名字或 ID，以逗号或空格分隔。</p></label><input id="exclude" type="text" placeholder="棘刺, 银灰"></div>
-        <div id="quota-panel" hidden><h3 class="section-band">职业配额 <small>CLASS QUOTA</small></h3><p class="quota-description">仅在“精确配额”模式下使用。<span id="quota-total"></span></p><div id="quota-inputs"></div></div>
-        <p class="settings-footnote">在编队页选择“精确配额”，可设置各职业人数。</p>
+        <div id="quota-panel" hidden><h3 class="section-band">职业配额 <small>CLASS QUOTA</small></h3><p class="quota-description">仅在“按职业配额”模式下使用。<span id="quota-total"></span></p><div id="quota-inputs"></div></div>
+        <p class="settings-footnote">在编队页选择“按职业配额”，可设置各职业人数。</p>
       </section>
       <section class="settings-page" data-settings-page="display" hidden>
         <h3 class="section-band">显示设置 <small>DISPLAY SETTINGS</small></h3>

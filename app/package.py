@@ -5,8 +5,8 @@
   · 跑一次头像全量预热（约 13 MB，之后抽签零联网）
 
 用法：
-    python app/package.py                     # 默认：用 app/devdata 的数据，输出到 dist/
-    python app/package.py --box box_20260925.json   # 指定用哪份干员池（默认取最新的一份）
+    python app/package.py                     # 默认只打包示例池 box_demo.json，输出到 dist/
+    python app/package.py --box box_20260925.json   # 明确指定其他干员池
     python app/package.py --no-avatars        # 不预热头像（包小，但首次抽签要联网补图）
     python app/package.py --no-build          # 跳过 cargo build（用现有 release 产物）
     python app/package.py --refresh-index     # 打包前重新抓一次 PRTS 职业索引
@@ -58,10 +58,10 @@ def pick_source(data: Path, box: str | None) -> Path:
         if not p.is_file():
             sys.exit(f"没有这份 box：{p}")
         return p
-    cands = sorted([p for p in data.glob("box*.json")], reverse=True)
-    if not cands:
-        sys.exit(f"{data} 下没有 box*.json —— 先用 MAA 扫一次干员池（或 --box 指定）")
-    return cands[0]
+    demo = data / "box_demo.json"
+    if demo.is_file():
+        return demo
+    sys.exit(f"{data} 下没有 box_demo.json —— 请用 --box 明确指定打包用的干员池")
 
 
 def refresh_index(data: Path) -> None:
@@ -188,7 +188,7 @@ def prefetch_into(data: Path) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser(description="打便携包")
     ap.add_argument("--data", default=str(ROOT / "devdata"), help="数据来源目录")
-    ap.add_argument("--box", help="用哪份 box（默认取 data 下最新的 box*.json）")
+    ap.add_argument("--box", help="用哪份 box（默认只用 box_demo.json，避免误打包个人干员池）")
     ap.add_argument("--out", default=str(WS / "dist"), help="输出目录")
     ap.add_argument("--no-avatars", action="store_true", help="不预热头像")
     ap.add_argument("--no-build", action="store_true", help="跳过编译")

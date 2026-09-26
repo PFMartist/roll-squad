@@ -14,6 +14,10 @@ use std::sync::atomic::Ordering;
 use tauri::http::Response;
 use tauri::Manager;
 
+// Android 的私有数据目录首次启动是空的；把随源码维护的职业索引编进 APK。
+#[cfg(any(mobile, test))]
+const BUNDLED_PROFESSIONS: &str = include_str!("../../devdata/prts_professions.json");
+
 /// 头像通过自定义协议供给前端。
 /// Windows 上前端拿到的 URL 形如 http://avatar.localhost/<percent-encoded 名字>，
 /// 由 app.js 的 convertFileSrc 生成，这里负责解码成干员名。
@@ -75,6 +79,20 @@ pub fn run() {
                 paths::set_data_dir(dir);
             }
             paths::ensure_dir(&paths::data_dir())?;
+            #[cfg(mobile)]
+            {
+                // 升级时补进新干员，保留用户已联网取得的索引条目。
+                let bundled: std::collections::HashMap<String, String> =
+                    serde_json::from_str(BUNDLED_PROFESSIONS)?;
+                let mut current = roster::load_professions();
+                let before = current.len();
+                for (name, profession) in bundled {
+                    current.entry(name).or_insert(profession);
+                }
+                if current.len() != before {
+                    std::fs::write(paths::professions_path(), serde_json::to_vec(&current)?)?;
+                }
+            }
             Ok(())
         })
         .register_asynchronous_uri_scheme_protocol("avatar", |_ctx, req, responder| {
@@ -95,4 +113,15 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("启动 Tauri 应用失败");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn bundled_professions_are_available_offline() {
+        let professions: std::collections::HashMap<String, String> =
+            serde_json::from_str(super::BUNDLED_PROFESSIONS).unwrap();
+        assert!(professions.len() >= 400);
+        assert_eq!(professions.get("阿米娅").map(String::as_str), Some("术师"));
+    }
 }

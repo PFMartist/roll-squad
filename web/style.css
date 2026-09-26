@@ -233,10 +233,25 @@ select option { background: #343536; color: #eff0f1; }
 .rail button .n { position: absolute; right: 6px; bottom: 7px; font: 10px/1 Arial, sans-serif; color: #d8d9da; }
 .rail button.zero .n { color: #6f7071; }
 .rail-end { height: 23px; flex: 0 0 auto; text-align: center; color: #6c6d6e; font: 8px/23px Arial, sans-serif; letter-spacing: .17em; }
-.warnings { font-size: 10px; line-height: 20px; color: #78613b; flex: 0 0 auto; }
-.warnings:empty { display: none; }
-.warnings > div { border-left: 2px solid #c9a264; padding-left: 9px; margin-top: 3px; }
-.warnings .err { color: #973e34; background: #f1dcd779; padding: 5px 10px; border-color: #a54c41; font-size: 12px; }
+/* Game-style notice: floats over the upper canvas and never changes card-grid height. */
+.warnings {
+  position: fixed; z-index: 20; top: 190px; left: 50%;
+  width: min(1000px, calc(100% - 36px)); min-height: 49px;
+  display: flex; align-items: center; gap: 17px; padding: 10px 23px;
+  color: #f4f7f8; font-size: 16px; line-height: 1.45;
+  background: linear-gradient(90deg, #141b20ed, #252a2ddc 78%, #15191bd9);
+  border-left: 4px solid #48bce7; border-top: 1px solid #d4e2e56b;
+  border-bottom: 1px solid #030708bb;
+  box-shadow: 0 9px 24px #10161966, inset 0 1px #ffffff18;
+  backdrop-filter: blur(5px); pointer-events: none;
+  opacity: 0; transform: translate(-50%, -10px);
+  transition: opacity .22s ease, transform .22s ease;
+}
+.warnings.visible { opacity: 1; transform: translate(-50%, 0); }
+.warnings[data-kind="error"] { border-left-color: #ed8d59; }
+.notice-label { flex: 0 0 auto; color: #56c8f2; font-size: 13px; font-weight: 700; letter-spacing: .18em; white-space: nowrap; }
+.warnings[data-kind="error"] .notice-label { color: #ffae74; }
+.notice-text { min-width: 0; overflow-wrap: anywhere; text-shadow: 0 1px 2px #0008; }
 /* Bottom command bar: composition at left, one clearly dominant action at right. */
 .command-bar { flex: 0 0 86px; display: flex; align-items: center; gap: 24px; border-top: 1px solid #55626542; margin-top: 8px; }
 .squad-readout { display: flex; align-items: center; gap: 13px; flex-shrink: 0; }
@@ -424,7 +439,8 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   #roll { margin: 0; flex-basis: 100%; height: 61px; justify-content: center; } .roll-arrow { margin-left: 15px; }
   .roll-text strong { font-size: 26px; } .roll-symbol { height: 37px; }
   footer { padding: 8px 16px; } .footer-source { width: 100%; }
-  .warnings { font-size: 9px; }
+  .warnings { width: calc(100% - 24px); padding: 8px 13px; gap: 10px; font-size: 12px; }
+  .notice-label { font-size: 10px; }
   .empty { padding: 20px 23px; } .empty h3 { font-size: 25px; } .empty p { max-width: 230px; font-size: 11px; }
   .settings-dialog { width: calc(100% - 24px); max-height: calc(var(--vh) - 24px); }
   .dialog-header { min-height: 67px; } .back-key { width: 48px; margin: 13px 14px; }
@@ -466,7 +482,7 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
 /* Transparent portraits must not expose the fallback initials behind the character. */
 .portrait ~ .initial { visibility: hidden; }
-/* Fit both rows to the actual available stage, including warnings and toolbar height. */
+/* Fit both rows to the actual available stage and toolbar height. */
 @supports (height: 1cqh) {
   @media (min-width: 1101px) {
     .roster-surface { container-type: size; }

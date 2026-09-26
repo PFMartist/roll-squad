@@ -35,13 +35,16 @@ const DEMO_PROFS = DEMO_ROSTER.profs.length
   : ['先锋', '近卫', '重装', '狙击', '术师', '医疗', '辅助', '特种'];
 const toDemoOps = (arr) => (arr || []).map(([name, rarity, elite, level, prof, potential]) => ({
   id: name, name, rarity, elite, level, potential, profession: DEMO_PROFS[prof],
+  alt_professions: name === '阿米娅' ? ['近卫', '医疗'] : [],
 }));
 const DEMO_POOLS = Object.fromEntries(Object.entries(DEMO_ROSTER.pools || {})
   .map(([key, p]) => [key, { label: p.label || key, ops: toDemoOps(p.ops) }]));
 const DEMO_POOL_KEYS = Object.keys(DEMO_POOLS);
 let demoPool = DEMO_POOL_KEYS[0] || '';        // 当前用哪份池子（演示模式下的"换 box"）
+let demoLastIds = new Set();                    // 只在当前页面记上一轮，不写用户历史
 const demoOps = () => (DEMO_POOLS[demoPool] || {}).ops || [];
 const demoIsMax = () => demoPool === 'max';
+const DEMO_FLOOR = Object.fromEntries(DEMO_PROFS.map((p) => [p, 1]));
 
 /** 演示干员库对应的游戏版本（由 app/make_demo_roster.py 写进 demo_roster.js）——
     页脚、BOX 下拉、徽章提示、演示横幅都用它，别在别处硬编码版本号。 */
@@ -98,10 +101,30 @@ function demoState() {
       done.forEach((o) => { prof[o.profession] = (prof[o.profession] || 0) + 1; });
       return [t, { n: done.length, desc: TIER_DESC[t], prof }];
     })),
-    professions: DEMO_PROFS, floor: { 先锋: 1, 医疗: 1, 重装: 1 }, history: [],
-    defaults: { tier: 0, mode: 'quota', n: 12, avoid_last: 1, exclude: '', rarities: [1, 2, 3, 4, 5, 6], quota: { 先锋: 1, 医疗: 1, 重装: 1 } },
-    modes: { floor: '保底队形', pure: '纯随机', quota: '精确配额' },
+    professions: DEMO_PROFS, floor: DEMO_FLOOR, history: [],
+    defaults: { tier: 0, mode: 'quota', n: 12, avoid_last: 1, exclude: '', rarities: [1, 2, 3, 4, 5, 6], quota: DEMO_FLOOR },
+    modes: { floor: '按职业配额', pure: '纯随机', quota: '按职业配额' },
   };
+}
+
+function demoRng(seed) {
+  let state = seed >>> 0;
+  return () => {
+    state += 0x6d2b79f5;
+    let x = state;
+    x = Math.imul(x ^ (x >>> 15), x | 1);
+    x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function demoSample(items, count, rng) {
+  const copy = items.slice();
+  for (let i = 0; i < count; i++) {
+    const j = i + Math.floor(rng() * (copy.length - i));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, count);
 }
 
 function demoApi(path, body) {
@@ -109,33 +132,98 @@ function demoApi(path, body) {
   if (path === '/api/settings') {
     // 演示模式的"换 box" = 在内置的两份池子之间切换
     const want = body && body.box;
-    if (want && DEMO_POOLS[want]) demoPool = want;
+    if (want && DEMO_POOLS[want] && want !== demoPool) {
+      demoPool = want;
+      demoLastIds = new Set();
+    }
     return demoState();
   }
   if (path !== '/api/roll') throw new Error(`演示模式没有这个接口：${path}`);
   const ops = demoOps();
   if (!ops.length) throw new Error('演示干员池没加载（assets/demo_roster.js 缺失或被挡了）');
-  const n = body.n || 12;
-  const byId = Object.fromEntries(ops.map((o) => [o.id, o]));
-  const rar = (body.rarities && body.rarities.length) ? body.rarities : [1, 2, 3, 4, 5, 6];
-  const tier = body.tier || 0;
-  const slots = (body.slots && body.slots.length === n) ? body.slots.slice() : new Array(n).fill(null);
-  const used = new Set(slots.filter((id) => id && byId[id]));
-  const pool = ops.filter((o) => rar.includes(o.rarity) && tierPass(o, tier) && !used.has(o.id));
-  const squad = slots.map((id) => {
-    if (id && byId[id]) return byId[id];
-    return pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
-  }).filter(Boolean);
+  const n = Number(body.n ?? 12);
+  if (!Number.isInteger(n) || n < 1 || n > 13) throw new Error('编队人数只能是 1~13');
+  const rarities = body.rarities == null ? [1, 2, 3, 4, 5, 6] : body.rarities;
+  if (!Array.isArray(rarities) || !rarities.length) throw new Error('星级一档都没选 —— 至少留一档');
+  const tier = Number(body.tier ?? 0);
+  const mode = body.mode === 'pure' ? 'pure' : 'quota';
+  const quota = mode === 'quota' ? (body.quota ?? DEMO_FLOOR) : null;
+  if (quota && Object.values(quota).reduce((sum, v) => sum + Number(v), 0) > n) {
+    throw new Error('职业配额总数超过编队人数 —— 减少配额或增加人数');
+  }
+  const seed = body.seed == null ? 1 + Math.floor(Math.random() * 2147483647) : Number(body.seed);
+  if (!Number.isSafeInteger(seed)) throw new Error('随机种子需要是整数');
+  const rng = demoRng(seed);
+  const excludes = new Set(body.exclude || []);
+  const afterTier = ops.filter((o) => tierPass(o, tier));
+  const eligible = afterTier.filter((o) => rarities.includes(o.rarity) &&
+    !excludes.has(o.id) && !excludes.has(o.name));
+  const slots = body.slots == null ? new Array(n).fill(null) : body.slots.slice();
+  if (slots.length !== n) throw new Error('锁定槽位与编队人数对不上');
+  const lockedIds = new Set(slots.filter(Boolean));
+  const avoid = body.avoid_last
+    ? new Set([...demoLastIds].filter((id) => !lockedIds.has(id)))
+    : new Set();
+  let pool = eligible.filter((o) => !avoid.has(o.id));
+  const warnings = [];
+  if (avoid.size && pool.length < n && eligible.length >= n) {
+    warnings.push(`避开上一轮后只剩 ${pool.length} 人、不够 ${n} 席，本轮已忽略历史规避`);
+    pool = eligible;
+  }
+  if (pool.length < n) throw new Error(`门槛过完只剩 ${pool.length} 人，不足 ${n} 席`);
+  const byId = new Map(pool.map((o) => [o.id, o]));
+  const used = new Set();
+  const resolved = slots.map((id) => {
+    if (!id) return null;
+    const op = byId.get(id);
+    if (!op || used.has(id)) {
+      warnings.push(`锁定的干员不在当前池子里，已忽略：${id}`);
+      return null;
+    }
+    used.add(id);
+    return op;
+  });
+  const empty = resolved.filter((o) => !o).length;
+  const available = pool.filter((o) => !used.has(o.id));
+  if (available.length < empty) throw new Error(`池子里只剩 ${available.length} 人，凑不满 ${empty} 个空位`);
+  const picked = [];
+  if (mode === 'pure') {
+    picked.push(...demoSample(available, empty, rng));
+  } else {
+    const kept = Object.fromEntries(DEMO_PROFS.map((p) =>
+      [p, resolved.filter((o) => o && o.profession === p).length]));
+    for (const prof of DEMO_PROFS) {
+      const left = empty - picked.length;
+      if (!left) break;
+      const want = Math.min(Math.max(0, Number(quota[prof] || 0) - kept[prof]), left);
+      if (!want) continue;
+      const natural = available.filter((o) => o.profession === prof && !used.has(o.id));
+      const nativePicks = demoSample(natural, Math.min(want, natural.length), rng);
+      picked.push(...nativePicks);
+      nativePicks.forEach((o) => used.add(o.id));
+      const remaining = want - nativePicks.length;
+      const alternatives = available.filter((o) => !used.has(o.id) && o.alt_professions.includes(prof));
+      const altPicks = demoSample(alternatives, Math.min(remaining, alternatives.length), rng);
+      altPicks.forEach((o) => { used.add(o.id); picked.push({ ...o, profession: prof, converted: true }); });
+      if (nativePicks.length + altPicks.length < want) {
+        warnings.push(`${prof}池子凑不满 ${want} 席，缺口已随机补齐`);
+      }
+    }
+    picked.push(...demoSample(available.filter((o) => !used.has(o.id)), empty - picked.length, rng));
+  }
+  const shuffled = demoSample(picked, picked.length, rng);
+  const squad = resolved.map((op) => op || shuffled.shift());
+  demoLastIds = new Set(squad.map((o) => o.id));
   return {
-    squad, seed: Math.floor(Math.random() * 1e9), mode: body.mode || 'floor', tier, n,
-    quota: body.quota || null,
+    squad, seed, mode, tier, n,
+    quota,
     pool: {
       roster: ops.length,
-      after_tier: ops.filter((o) => tierPass(o, tier)).length,
-      after_filter: pool.length + squad.length,
+      after_tier: afterTier.length,
+      after_filter: pool.length,
     },
     time: new Date().toISOString().slice(0, 19),
-    warnings: ['演示模式：内置假数据，不连后端、不写历史'], history_file: null, session: null,
+    warnings, history_file: null, session: null,
   };
 }
 
@@ -147,6 +235,62 @@ let ST = null;          // /api/state 的快照
 let squad = [];         // 当前这队（槽位顺序）
 let locked = new Set(); // 被锁住的槽位下标
 let busy = false;
+let noticeQueue = [];
+let noticeTimer = 0;
+let noticeFadeTimer = 0;
+
+function positionNotice() {
+  const el = $('#warnings');
+  if (el.hidden) return;
+  const safeTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+  const stageTop = $('.stage').getBoundingClientRect().top;
+  const surface = $('.roster-surface').getBoundingClientRect();
+  // 筛选项在 stage 上方；滚动到卡槽下部时仍将提示留在视口内。
+  el.style.top = `${Math.max(safeTop + 12, stageTop + 12)}px`;
+  // 在窄屏只覆盖卡槽区域，不盖住右侧职业选项。
+  el.style.left = `${surface.left + surface.width / 2}px`;
+  el.style.width = `${Math.min(1000, surface.width - 16)}px`;
+}
+
+function clearNotices() {
+  clearTimeout(noticeTimer);
+  clearTimeout(noticeFadeTimer);
+  noticeTimer = noticeFadeTimer = 0;
+  noticeQueue = [];
+  const el = $('#warnings');
+  el.classList.remove('visible');
+  el.hidden = true;
+}
+
+function nextNotice() {
+  const notice = noticeQueue.shift();
+  if (!notice) { clearNotices(); return; }
+  const el = $('#warnings');
+  el.dataset.kind = notice.kind;
+  el.setAttribute('role', notice.kind === 'error' ? 'alert' : 'status');
+  el.setAttribute('aria-live', notice.kind === 'error' ? 'assertive' : 'polite');
+  el.querySelector('.notice-label').textContent = notice.kind === 'error' ? '错误' : '提示';
+  el.querySelector('.notice-text').textContent = notice.text;
+  el.hidden = false;
+  positionNotice();
+  void el.offsetWidth; // 新提示也从上方轻轻滑入
+  el.classList.add('visible');
+  noticeTimer = setTimeout(() => {
+    el.classList.remove('visible');
+    noticeFadeTimer = setTimeout(() => {
+      el.hidden = true;
+      noticeTimer = noticeFadeTimer = 0;
+      nextNotice();
+    }, 240);
+  }, notice.kind === 'error' ? 5000 : 3800);
+}
+
+/** 同一时刻只显示一条；新的抽取结果会替换旧提示，不在卡槽旁堆积。 */
+function showNotices(messages, kind = 'warning') {
+  clearNotices();
+  noticeQueue = messages.filter(Boolean).map((text) => ({ text: String(text), kind }));
+  if (noticeQueue.length) nextNotice();
+}
 
 async function api(path, body) {
   if (DEMO) return demoApi(path, body || {});      // 演示模式：不发任何请求
@@ -347,12 +491,11 @@ function renderResult(res) {
       copyButton.setAttribute('aria-label', '复制当前编队名单');
     }, 1800);
   };
-  const warnings = DEMO ? ['演示模式：仅供界面预览；保底、配额、排除与种子重放以原后端为准。'] : (res.warnings || []);
-  $('#warnings').innerHTML = warnings.map((w) => `<div>${esc(w)}</div>`).join('');
+  showNotices(res.warnings || []);
 }
 
 function renderError(msg) {
-  $('#warnings').innerHTML = `<div class="err">${esc(msg)}</div>`;
+  showNotices([msg], 'error');
   if (!ST) {
     $('#selection-state').textContent = '后端未连接';
     $('#box-badge').textContent = '无法读取档案';
@@ -364,7 +507,7 @@ function renderEmpty() {
   squad = [];
   locked.clear();
   $('#summary').innerHTML = '';
-  $('#warnings').innerHTML = '';
+  clearNotices();
   renderSquad();
 }
 
@@ -372,7 +515,7 @@ function renderEmpty() {
 function applyDefaults() {
   const d = ST.defaults || {};
   $('#tier').value = String(d.tier ?? 0);
-  // 模式只剩两个：按职业配额（面板可编辑，默认值就是老三样保底）与纯随机。
+  // 模式只剩两个：按职业配额（面板可编辑，默认八个职业各一名）与纯随机。
   // 老配置/老历史里的 "floor" 直接并入配额——它俩本来就是同一个机制，分成两个选项只会让人以为切换无效。
   $('#mode').value = d.mode === 'pure' ? 'pure' : 'quota';
   $('#n').value = d.n || 12;
@@ -461,7 +604,6 @@ function syncControls() {
   renderHistory();
   updatePoolInfo();
   renderDemoVersion();
-  renderDemoBanner();
 }
 
 /** 页脚常驻一行：演示干员库对应的游戏版本 + 当前池子的练度性质（在线试用时一眼能看出数据性质）。
@@ -482,14 +624,8 @@ function renderDemoVersion() {
 function renderDemoBanner() {
   if (!autoDemo) return;
   const n = demoOps().length;
-  const tail = demoIsMax()
-    ? '当前是<b>全干员满练度</b>：人人顶格，所以「精一+／精一满级」「精二／模组线」人数相同；' +
-      '想看六个档位的筛选差别，就在上面的下拉里换成随机练度那份。'
-    : '这一份的精英化与等级是<b>随机分配的演示值</b>，用来看出六个档位的筛选差别；' +
-      '下拉里还能换成全干员满练度那份。';
-  $('#warnings').innerHTML = '<div>没连上本地服务，已切到<b>内置演示数据</b>' +
-    `（全游戏 ${n} 名${DEMO_VER ? ` · ${esc(DEMO_VER)}` : ''}）。${tail}` +
-    '这里也没有立绘，卡片走职业色块。要抽自己的干员池，请下载桌面版。</div>';
+  const label = demoIsMax() ? '全员满练度' : '随机演示练度';
+  showNotices([`已切到内置演示数据：${n} 名干员 · ${label}。可在 BOX 选单切换；自己的干员池请用桌面版。`]);
 }
 
 async function onAvatarsToggle(e) {
@@ -536,6 +672,7 @@ async function onBoxChange(e) {
   syncControls();
   applyDefaults();               // 新 box 的档位人数变了，顺手把记住的参数重新铺一遍
   renderEmpty();                 // 不自动抽：什么时候抽由你按 Roll 决定
+  renderDemoBanner();
 }
 
 async function boot() {
@@ -605,6 +742,7 @@ async function boot() {
 
   $('#roll').disabled = false;
   renderEmpty();      // 开页面**不自动抽**：想抽就按 Roll
+  renderDemoBanner();
 }
 
 
@@ -658,6 +796,11 @@ function openSettings(tab = 'rules') {
 
 function inputsValid() {
   if (!$('#n').checkValidity()) { $('#n').reportValidity(); return false; }
+  const rarities = readRarities();
+  if (Array.isArray(rarities) && rarities.length === 0) {
+    renderError('星级一档都没选 —— 至少留一档');
+    return false;
+  }
   if ($('#mode').value === 'quota') {
     const badQuota = [...document.querySelectorAll('#quota-inputs input')].find((i) => !i.checkValidity());
     if (badQuota) { openSettings(); badQuota.reportValidity(); return false; }
@@ -666,6 +809,8 @@ function inputsValid() {
 }
 
 function initTheme() {
+  window.addEventListener('scroll', positionNotice, { passive: true });
+  window.addEventListener('resize', positionNotice);
   document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListener('click', () => openSettings()));
   document.querySelectorAll('[data-open-history]').forEach((b) => b.addEventListener('click', () => $('#history-dialog').showModal()));
   document.querySelectorAll('[data-close-dialog]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
