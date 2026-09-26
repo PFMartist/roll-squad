@@ -87,10 +87,11 @@ h1 { font: 800 36px/1.25 var(--serif); letter-spacing: .15em; margin: 0; }
 .pick > span { color: #979899; font-size: 10px; }
 #box { grid-column: 2; grid-row: 1; background-color: transparent; padding: 2px 24px 2px 0; min-height: 26px; color: #f0f1f2; width: 220px; max-width: 21vw; border: 0; border-bottom: 1px solid #97989955; }
 #box option { background: #343536; }
-/* 导入 box：只有桌面版/安卓端有文件系统，浏览器版与演示版由 app.js 保持 hidden */
-.box-import { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 5px; font: inherit; font-size: 11px; line-height: 1; color: #dbdcdd; background: #33363a; border: 1px solid #55585d; border-radius: 3px; padding: 5px 9px; cursor: pointer; white-space: nowrap; }
-.box-import svg { width: 13px; height: 13px; }
-.box-import:hover { background: #3f4348; border-color: #6d7177; }
+/* 导入 box：风格与相邻的「历史记录」一致（无框、图标+文字、悬停变蓝）。按钮只在有文件系统的宿主出现（桌面版/安卓端），浏览器版与演示版由 app.js 保持 hidden */
+.box-import { grid-column: 3; grid-row: 1; display: flex; align-items: center; gap: 9px; font: inherit; font-size: 13px; line-height: 1; color: #e5e6e7; background: transparent; border: 0; padding: 12px 0; cursor: pointer; white-space: nowrap; }
+.box-import svg { width: 21px; height: 21px; }
+.box-import:hover { color: #75b9dc; }
+.box-import:disabled { color: #8b8f92; cursor: default; }
 .box-import[hidden] { display: none; }
 .badge { grid-column: 2 / 4; font-size: 10px; color: #b3b4b5; white-space: nowrap; }
 .badge::before { content: ''; display: inline-block; height: 5px; width: 5px; margin: 0 6px 1px 0; background: #a1a2a3; }
@@ -401,7 +402,7 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   .page-title > span { font-size: 6px; letter-spacing: .04em; }
   .topright { gap: 10px; } .archive-pick { grid-template-columns: 1fr; } .pick { display: none; }
   #box { grid-column: 1; width: 164px; max-width: 28vw; font-size: 10px; } .badge { grid-column: 1; font-size: 8px; }
-  .box-import { grid-column: 1; grid-row: 3; justify-self: start; }
+  .box-import { grid-column: 1; grid-row: 3; justify-self: start; } .box-import > span { display: none; }
   .history-key > span { display: none; } .history-key svg { width: 22px; height: 22px; }
   .workspace { padding: 0 16px; } .selection-bar { gap: 12px; padding: 15px 0 12px; }
   .selection-title { flex: 1 0 100%; } .selection-title h2 { font-size: 23px; }
@@ -503,7 +504,7 @@ dialog::backdrop { background: #1b1c1d77; backdrop-filter: blur(8px) saturate(.6
   .page-title { min-width: 122px; padding: 2px 16px 4px; } h1 { font-size: 24px; letter-spacing: .1em; }
   .page-title > span { font-size: 6px; }
   .logo { width: 68px; max-height: 26px; }
-  .history-key { padding: 6px 0; }
+  .history-key { padding: 6px 0; } .box-import { padding: 6px 0; }
   .pick { font-size: 11px; } #box { min-height: 22px; font-size: 12px; }
   .badge { font-size: 9px; }
   .selection-bar { flex-basis: 40px; }
