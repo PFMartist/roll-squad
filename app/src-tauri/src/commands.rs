@@ -13,7 +13,7 @@ pub static AVATARS_ENABLED: AtomicBool = AtomicBool::new(true);
 // ---------------------------------------------------------------- 配置
 
 pub fn load_config() -> Config {
-    std::fs::read_to_string(paths::config_path())
+    paths::read_text(&paths::config_path())
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
@@ -143,10 +143,15 @@ pub fn get_state() -> Result<Value, String> {
     let cfg = load_config();
     AVATARS_ENABLED.store(cfg.fetch_avatars, Ordering::Relaxed);
 
+    // 解析失败**不能吞掉**：以前这里是 unwrap_or_default()，于是"文件读不了"在界面上
+    // 只表现为一个 0 人的空池子，用户完全看不到原因。现在把错误一起带回去给横幅。
     let box_path = current_box(&cfg);
-    let ops: Vec<Operator> = match &box_path {
-        Some(p) => roster::build_roster(p).unwrap_or_default(),
-        None => Vec::new(),
+    let (ops, box_error): (Vec<Operator>, Option<String>) = match &box_path {
+        Some(p) => match roster::build_roster(p) {
+            Ok(ops) => (ops, None),
+            Err(e) => (Vec::new(), Some(e)),
+        },
+        None => (Vec::new(), None),
     };
 
     let (box_file, sync, age) = match &box_path {
@@ -175,6 +180,7 @@ pub fn get_state() -> Result<Value, String> {
         "box": {
             "file": box_file, "path": box_file, "sync": sync,
             "age_days": age, "stale": age.map(|d| d > 14).unwrap_or(false),
+            "error": box_error,
         },
         "box_options": box_options(),
         "avatars_enabled": cfg.fetch_avatars,
@@ -343,10 +349,12 @@ pub async fn import_box(app: tauri::AppHandle) -> Result<Value, String> {
     }
     std::fs::write(&dest, &bytes).map_err(|e| format!("写入失败 {}：{e}", dest.display()))?;
 
-    // 解析不出干员 = 选错文件了，删掉别污染 box 列表
-    if !matches!(roster::build_roster(&dest), Ok(ops) if !ops.is_empty()) {
+    // 解析不出干员 = 选错文件了，删掉别污染 box 列表。
+    // 注意要**把原因说出来**：以前这里一律回一句"没解析出干员"，于是"文件是空文件"
+    // "选成了网页""编码不对"在界面上长得一模一样，用户只能靠猜。
+    if let Err(why) = roster::build_roster(&dest) {
         let _ = std::fs::remove_file(&dest);
-        return Err("这个文件里没解析出干员。请选 MAA「干员识别」导出的 OperBoxData.json。".into());
+        return Err(import_failure_text(&why));
     }
 
     let mut cfg = load_config();
@@ -364,4 +372,35 @@ pub fn prefetch_avatars() -> Result<serde_json::Value, String> {
     }
     let ok = avatar::prefetch(&names);
     Ok(json!({ "cached": ok, "total": names.len() }))
+}
+
+/// 导入失败时给用户看的话。
+///
+/// 以前这里是一句固定的"这个文件里没解析出干员"——空文件、选成网页、编码不对
+/// 三种完全不同的毛病长得一模一样，用户只能自己猜（这正是评论区"要么就是没解析出干员"的来源）。
+/// 现在把底层诊断的**第一行**带出来（多行细节留给 data\ 里那份的横幅去显示）。
+fn import_failure_text(why: &str) -> String {
+    let first = why.lines().next().unwrap_or("读不出来").trim();
+    format!("导入失败：{first}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn import_failure_keeps_the_reason() {
+        // 真错误长这样（见 roster::describe_bad_json），第一行必须原样带出来
+        let why = "D:\\x\\box_1.json 开头不是 JSON：expected value at line 1 column 1\n\
+                   开头字节：3C 21 44 4F（正常应为 7B = `{`）。";
+        let text = import_failure_text(why);
+        assert!(text.starts_with("导入失败："));
+        assert!(text.contains("开头不是 JSON"), "必须说清是什么毛病：{text}");
+        assert!(!text.contains('\n'), "通知栏只有一行，多行细节不该塞进来：{text}");
+    }
+
+    #[test]
+    fn import_failure_handles_empty_reason() {
+        assert_eq!(import_failure_text(""), "导入失败：读不出来");
+    }
 }

@@ -220,7 +220,7 @@ pub fn compose(
 // ---------------------------------------------------------------- 历史
 
 pub fn load_history() -> History {
-    std::fs::read_to_string(paths::history_path())
+    paths::read_text(&paths::history_path())
         .ok()
         .and_then(|t| serde_json::from_str::<History>(&t).ok())
         .unwrap_or_default()

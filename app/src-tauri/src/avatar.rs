@@ -11,7 +11,7 @@ use std::time::Duration;
 const BATCH: usize = 30;
 
 pub fn load_index() -> HashMap<String, String> {
-    std::fs::read_to_string(paths::avatars_index_path())
+    paths::read_text(&paths::avatars_index_path())
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()

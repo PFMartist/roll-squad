@@ -93,11 +93,48 @@ pub fn http_client() -> Result<reqwest::blocking::Client, String> {
 
 // ---------------------------------------------------------------- box
 
+/// 没 BOM 的 UTF-16 是唯一"看着像 JSON 却怎么都解析不了"的常见形态：
+/// 正文是 UTF-8 时首字节是 `7B`（`{`），UTF-16LE 会变成 `7B 00`，BE 是 `00 7B`。
+/// 有 BOM 的两种情况已在 paths::decode_text 里直接转码，走不到这儿。
+fn utf16_without_bom_hint(text: &str) -> Option<&'static str> {
+    let b = text.as_bytes();
+    if b.len() >= 2 && b[0] == 0x7B && b[1] == 0x00 {
+        return Some("UTF-16 小端");
+    }
+    if b.len() >= 2 && b[0] == 0x00 && b[1] == 0x7B {
+        return Some("UTF-16 大端");
+    }
+    None
+}
+
+/// 解析不了时给一句人话：把开头几个字节亮出来，让人知道手里到底是什么文件。
+fn describe_bad_json(path: &Path, text: &str, err: &serde_json::Error) -> String {
+    let head: String = text.as_bytes().iter().take(8).map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+    let lead = text.chars().next().unwrap_or('\0');
+    let looks_like_json = matches!(lead, '{' | '[' | '"' | '-' | 't' | 'f' | 'n') || lead.is_ascii_digit();
+    if let Some(enc) = utf16_without_bom_hint(text) {
+        return format!(
+            "{} 像是「{enc}」编码且没有 BOM，读不了。\n用记事本/VSCode 转存成 UTF-8（无 BOM）再导入。开头字节：{head}",
+            path.display()
+        );
+    }
+    if !looks_like_json {
+        // 走到这儿 = 连开头都不像 JSON：多半选错了文件，或者开头有看不见的东西
+        return format!(
+            "{} 开头不是 JSON：{err}\n开头字节：{head}（正常应为 7B = `{{`）。\n\
+             请确认选的是 MAA「干员识别」导出的 OperBoxData.json；若确实选对了，\
+             多半是被编辑器另存过 —— 用记事本/VSCode 转存成 UTF-8（无 BOM）即可。",
+            path.display()
+        );
+    }
+    format!("{} 不是合法 JSON：{err}", path.display())
+}
+
 pub fn load_box(path: &Path) -> Result<Vec<BoxOp>, String> {
-    let text = std::fs::read_to_string(path)
+    let text = paths::read_text(path)
         .map_err(|e| format!("读不了 {}\n{e}", path.display()))?;
     let v: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|e| format!("{} 不是合法 JSON：{e}", path.display()))?;
+        .map_err(|e| describe_bad_json(path, &text, &e))?;
     let arr = if let Some(a) = v.as_array() {
         a.clone()
     } else {
@@ -123,7 +160,7 @@ pub fn load_box(path: &Path) -> Result<Vec<BoxOp>, String> {
 
 /// box 的同步时间（MAA 导出的 syncTime，形如 2026-09-12T00:17:10.7447143+08:00）
 pub fn box_sync_text(path: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = paths::read_text(path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     let s = v.get("syncTime")?.as_str()?;
     Some(s.chars().take(10).collect())
@@ -131,7 +168,7 @@ pub fn box_sync_text(path: &Path) -> Option<String> {
 
 /// 距今多少天（只按日期算，不涉及时区秒级精度）。取不到返回 None。
 pub fn box_age_days(path: &Path) -> Option<i64> {
-    let text = std::fs::read_to_string(path).ok()?;
+    let text = paths::read_text(path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     let s = v.get("syncTime")?.as_str()?;
     let y: i64 = s.get(0..4)?.parse().ok()?;
@@ -170,7 +207,7 @@ fn load_char_table() -> Option<CharTable> {
     if !path.is_file() {
         return None;
     }
-    let text = std::fs::read_to_string(&path).ok()?;
+    let text = paths::read_text(&path).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     let obj = v.as_object()?;
     let mut by_id = HashMap::new();
@@ -203,7 +240,7 @@ fn load_char_table() -> Option<CharTable> {
 /// PRTS 职业索引：干员名 → 职业
 pub fn load_professions() -> HashMap<String, String> {
     let path = paths::professions_path();
-    std::fs::read_to_string(&path)
+    paths::read_text(&path)
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
@@ -378,4 +415,118 @@ pub fn profession_hist(ops: &[Operator]) -> serde_json::Value {
         }
     }
     serde_json::Value::Object(m)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 回归：带 BOM 的 box 必须和原件解析出一模一样的结果。
+    /// 这条是用户报的那个 bug（"expected value at line 1 column 1"）的守卫。
+    #[test]
+    fn box_with_bom_loads_like_original() {
+        let body = r#"{"done":true,"syncTime":"2026-09-27T20:17:34.9542900+08:00","own_opers":[
+            {"id":"char_002_amiya","name":"阿米娅","elite":2,"level":80,"own":true,"potential":6,"rarity":5},
+            {"id":"char_103_angel","name":"能天使","elite":2,"level":60,"own":true,"potential":2,"rarity":6}
+        ]}"#
+            .as_bytes();
+        let dir = std::env::temp_dir().join(format!("roll-squad-bom-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let plain = dir.join("plain.json");
+        let bommed = dir.join("bom.json");
+        std::fs::write(&plain, body).unwrap();
+        let mut with_bom = vec![0xEF, 0xBB, 0xBF];
+        with_bom.extend_from_slice(body);
+        std::fs::write(&bommed, &with_bom).unwrap();
+
+        let a = load_box(&plain).expect("无 BOM 的 box 应该能读");
+        let b = load_box(&bommed).expect("带 BOM 的 box 也应该能读（以前这里报 line 1 column 1）");
+        assert_eq!(a.len(), 2);
+        assert_eq!(b.len(), a.len());
+        assert_eq!(
+            b.iter().map(|o| (o.name.clone(), o.elite, o.level)).collect::<Vec<_>>(),
+            a.iter().map(|o| (o.name.clone(), o.elite, o.level)).collect::<Vec<_>>()
+        );
+        // 同步时间也要能从带 BOM 的文件里读出来（否则界面上显示"同步时间未知"）
+        assert_eq!(box_sync_text(&bommed).as_deref(), Some("2026-09-27"));
+        assert!(box_age_days(&bommed).is_some());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 回归（真数据）：拿仓库里那份真盒子的副本做 BOM / UTF-16 变体，
+    /// 结果必须和原件**逐人一致**。这条守住用户报的那个 bug。
+    #[test]
+    fn real_box_survives_bom_and_utf16() {
+        let devdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("devdata");
+        let src = devdata.join("box_demo.json");
+        if !src.is_file() {
+            eprintln!("跳过：没有 {}（devdata 未随仓库分发）", src.display());
+            return;
+        }
+        let raw = std::fs::read(&src).unwrap();
+        let text = String::from_utf8(raw.clone()).unwrap();
+
+        let dir = std::env::temp_dir().join(format!("roll-squad-realbox-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 职业索引随包预置：有它才不用联网就能把职业补齐
+        std::fs::copy(devdata.join("prts_professions.json"), dir.join("prts_professions.json")).unwrap();
+        paths::set_data_dir(dir.clone());
+
+        let plain = dir.join("plain.json");
+        std::fs::write(&plain, &raw).unwrap();
+        let bom = dir.join("bom.json");
+        let mut v = vec![0xEF, 0xBB, 0xBF];
+        v.extend_from_slice(&raw);
+        std::fs::write(&bom, &v).unwrap();
+        let u16 = dir.join("u16.json");
+        let mut v16 = vec![0xFF, 0xFE];
+        for u in text.encode_utf16() {
+            v16.extend_from_slice(&u.to_le_bytes());
+        }
+        std::fs::write(&u16, &v16).unwrap();
+
+        let reference = build_roster(&plain).expect("原件应该能读");
+        assert!(reference.len() > 400, "真盒子应该有几百人，实际 {}", reference.len());
+        for (label, path) in [("UTF-8 BOM", &bom), ("UTF-16LE BOM", &u16)] {
+            let got = build_roster(path).unwrap_or_else(|e| panic!("{label} 应该能读，却报：{e}"));
+            assert_eq!(got.len(), reference.len(), "{label} 的人数对不上");
+            let names = |ops: &[Operator]| {
+                ops.iter().map(|o| (o.name.clone(), o.rarity, o.elite, o.level, o.potential)).collect::<Vec<_>>()
+            };
+            assert_eq!(names(&got), names(&reference), "{label} 解析出的人对不上");
+            assert_eq!(
+                box_sync_text(path),
+                box_sync_text(&plain),
+                "{label} 的同步时间读不出来（界面上会显示'同步时间未知'）"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 选错文件时给的提示得能指出"开头是什么"，而不是一句 serde 原文
+    #[test]
+    fn wrong_file_reports_head_bytes() {
+        let dir = std::env::temp_dir().join(format!("roll-squad-badbox-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let html = dir.join("html.json");
+        std::fs::write(&html, b"<!DOCTYPE html><html></html>").unwrap();
+        let err = load_box(&html).unwrap_err();
+        assert!(err.contains("3C 21 44 4F"), "应列出开头字节，实际：{err}");
+        assert!(err.contains("OperBoxData.json"), "应提示该选哪个文件，实际：{err}");
+
+        // 没 BOM 的 UTF-16：正文首字节会变成 7B 00，得点名编码
+        let u16 = dir.join("u16.json");
+        let mut bytes = Vec::new();
+        for u in r#"{"done":true,"own_opers":[]}"#.encode_utf16() {
+            bytes.extend_from_slice(&u.to_le_bytes());
+        }
+        std::fs::write(&u16, &bytes).unwrap();
+        let err16 = load_box(&u16).unwrap_err();
+        assert!(err16.contains("UTF-16"), "应点名 UTF-16，实际：{err16}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

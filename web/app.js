@@ -275,19 +275,23 @@ function positionNotice() {
   el.style.width = `${Math.min(1000, surface.width - 16)}px`;
 }
 
-function clearNotices() {
+/** 清空提示。默认**保留常驻（sticky）提示**：那种"文件读不了"的提示被顺手清掉，
+ *  用户就又回到"界面一片空白但不知道哪坏了"的老样子。
+ *  drain=true 只在队列本身已经空了时用 —— 那时没有"下一条"，把常驻项一并收掉。 */
+function clearNotices(drain = false) {
   clearTimeout(noticeTimer);
   clearTimeout(noticeFadeTimer);
   noticeTimer = noticeFadeTimer = 0;
-  noticeQueue = [];
+  noticeQueue = drain ? [] : noticeQueue.filter((n) => n.sticky);
   const el = $('#warnings');
   el.classList.remove('visible');
   el.hidden = true;
+  if (!drain && noticeQueue.length) nextNotice();   // 还有常驻项：重新挂上（也会刷新定位）
 }
 
 function nextNotice() {
   const notice = noticeQueue.shift();
-  if (!notice) { clearNotices(); return; }
+  if (!notice) { clearNotices(true); return; }
   const el = $('#warnings');
   el.dataset.kind = notice.kind;
   el.setAttribute('role', notice.kind === 'error' ? 'alert' : 'status');
@@ -298,6 +302,7 @@ function nextNotice() {
   positionNotice();
   void el.offsetWidth; // 新提示也从上方轻轻滑入
   el.classList.add('visible');
+  if (notice.sticky) return;   // 常驻提示（如"干员池读不了"）：留着，等下一次 showNotices 覆盖
   noticeTimer = setTimeout(() => {
     el.classList.remove('visible');
     noticeFadeTimer = setTimeout(() => {
@@ -308,11 +313,18 @@ function nextNotice() {
   }, notice.kind === 'error' ? 5000 : 3800);
 }
 
-/** 同一时刻只显示一条；新的抽取结果会替换旧提示，不在卡槽旁堆积。 */
-function showNotices(messages, kind = 'warning') {
-  clearNotices();
-  noticeQueue = messages.filter(Boolean).map((text) => ({ text: String(text), kind }));
-  if (noticeQueue.length) nextNotice();
+/** 同一时刻只显示一条；新的抽取结果会替换旧提示，不在卡槽旁堆积。
+ *  sticky=true 用于"不修就不会好"的问题（干员池文件读不了）：不自动消失，
+ *  也不被 clearNotices() 冲掉，只有下一条 showNotices 能把它换掉。 */
+function showNotices(messages, kind = 'warning', sticky = false) {
+  noticeQueue = [];
+  clearTimeout(noticeTimer);
+  clearTimeout(noticeFadeTimer);
+  noticeTimer = noticeFadeTimer = 0;
+  noticeQueue = (Array.isArray(messages) ? messages : [messages])
+    .filter(Boolean)
+    .map((text) => ({ text: String(text), kind, sticky }));
+  nextNotice();
 }
 
 async function api(path, body) {
@@ -417,6 +429,14 @@ function renderBoxPick() {
   sel.innerHTML = opts.map((o) =>
     `<option value="${esc(o.file)}"${o.file === ST.box.path ? ' selected' : ''}>` +
     `${esc(o.name)}${o.sync ? ` · ${o.sync}` : ''}${o.file === ST.box.path ? '（当前）' : ''}</option>`).join('');
+}
+
+/** 干员池读不了时常驻一条横幅。以前这种文件在界面上只表现为"0 名干员"，
+ *  用户看不出是文件的问题还是软件坏了 —— 正是"要么就是没解析出干员"的来源。 */
+function showBoxError() {
+  const err = ST && ST.box && ST.box.error;
+  if (!err || DEMO || autoDemo) return;   // 演示数据没有"读不了"这回事
+  showNotices(`干员池读不了：${err}`, 'error', true);
 }
 
 function updatePoolInfo() {
@@ -649,6 +669,8 @@ function syncControls() {
   renderHistory();
   updatePoolInfo();
   renderDemoVersion();
+  renderDemoBanner();      // 演示横幅优先：它压在"读不到后端"之上，压完就不再抢
+  showBoxError();          // 池子读不了就常驻横幅，别让用户对着一片空白猜
 }
 
 /** 页脚常驻一行：演示干员库对应的游戏版本 + 当前池子的练度性质（在线试用时一眼能看出数据性质）。
