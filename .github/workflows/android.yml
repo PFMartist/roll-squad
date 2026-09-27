@@ -60,6 +60,13 @@ jobs:
         working-directory: app
         run: npm ci
 
+      # 头像编进 APK：安卓没有「exe 同级 data\」那种数据目录，不内置就只能运行中联网取图。
+      # 这一步纯本地转码（app/devdata/avatars 的 PNG → web/assets/avatars 的 WebP），不联网。
+      - name: 生成内嵌头像（APK 离线可用）
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 app/make_avatar_assets.py --require
+
       # aarch64 = 真机；x86_64 = 模拟器（MuMu / Android Studio AVD）
       - name: 打 APK
         working-directory: app

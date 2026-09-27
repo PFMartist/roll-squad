@@ -15,6 +15,29 @@ let autoDemo = false;       // 是不是"连不上后端才退到演示"的（�
 const TAURI = typeof window !== 'undefined' && !!window.__TAURI__;
 const ASSET = 'assets';     // 一律相对路径：file:// 下也能用
 
+/* ---------------------------------------------------------------- 包内头像
+   安卓 APK 把全量头像编进了 assets/avatars/（app/make_avatar_assets.py 生成的 WebP +
+   manifest.json），所以正常使用**一个请求都不发**。桌面版 / 浏览器没有这份 manifest，
+   fetch 拿不到就整段跳过，照旧走后端（桌面自定义协议 / 本地服务 → 网络）。
+   名字↔文件名的换算规则必须与 Rust 侧 paths.rs::avatar_file 一致。 */
+const AVATAR_ASSET_DIR = `${ASSET}/avatars`;
+const avatarKey = (n) => String(n ?? '').replace(/[\\/:*?"<>|]/g, '_');
+let bundledAvatars = null;      // Set<string> | null —— null 表示这份包里没有内嵌头像
+let bundleTried = false;
+
+function loadBundledAvatars() {
+  if (bundleTried) return;
+  bundleTried = true;
+  fetch(`${AVATAR_ASSET_DIR}/manifest.json`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((m) => {
+      if (!m || !Array.isArray(m.names) || !m.names.length) return;
+      bundledAvatars = new Set(m.names);
+      if (squad.length) renderSquad();      // 清单比首次编队回来得晚：补画一次
+    })
+    .catch(() => { /* 没有内嵌资源：静默走原来的联网路径 */ });
+}
+
 const PROF_COLOR = {
   先锋: '#7d3a34', 近卫: '#2f4a72', 重装: '#6b4a1f', 狙击: '#2f5f4c',
   术师: '#4a3a72', 医疗: '#2b5560', 辅助: '#6b3350', 特种: '#454c56',
@@ -317,11 +340,34 @@ async function api(path, body) {
   return data;
 }
 
-/** 头像地址：演示模式没有立绘（返回空串，卡片露出职业色块），桌面版走自定义协议，浏览器走本地服务 */
-function avatarSrc(op) {
-  if (DEMO) return op.img || '';
-  if (TAURI) return window.__TAURI__.core.convertFileSrc(op.name, 'avatar');
-  return `/api/avatar?name=${encodeURIComponent(op.name)}`;
+/** 头像地址：包内资源优先（安卓包全量内置，零请求），其次桌面自定义协议 / 浏览器本地服务。
+    包内没有的（发布后新出的干员）保持老行为，由 portraitError 回退到后端。 */
+function avatarPlan(op) {
+  if (DEMO) return { src: op.img || '', fb: '' };
+  const backend = TAURI
+    ? window.__TAURI__.core.convertFileSrc(op.name, 'avatar')
+    : `/api/avatar?name=${encodeURIComponent(op.name)}`;
+  if (bundledAvatars && bundledAvatars.has(avatarKey(op.name))) {
+    return { src: `${AVATAR_ASSET_DIR}/${encodeURIComponent(avatarKey(op.name))}.webp`, fb: backend };
+  }
+  return { src: backend, fb: '' };
+}
+
+/** 立绘 <img>：加载失败先退到 data-fallback（后端），再失败才撤掉整张图（卡片露出职业色块） */
+function portraitImg(plan) {
+  if (!plan.src) return '';
+  const fb = plan.fb ? ` data-fallback="${esc(plan.fb)}"` : '';
+  return `<img class="portrait" src="${plan.src}"${fb} alt="" referrerpolicy="no-referrer" loading="lazy" onerror="portraitError(this)">`;
+}
+
+function portraitError(img) {
+  const fb = img.getAttribute('data-fallback');
+  if (fb) {
+    img.removeAttribute('data-fallback');
+    img.src = fb;
+    return;
+  }
+  img.remove();
 }
 
 // ---------------------------------------------------------------- 控件
@@ -410,8 +456,7 @@ function renderSquad() {
     <div class="card rar${op.rarity}${isLocked ? ' locked' : ''}" data-i="${i}" role="group" aria-label="${esc(op.name)}，${op.rarity}星${esc(op.profession)}，精英化${op.elite}，等级${op.level}${isLocked ? '，已锁定' : ''}">
       <div class="thumb" style="--c:${PROF_COLOR[op.profession] || '#454c56'}">
         <img class="fallback-prof" src="${PROF_ICON(op.profession)}" alt="" aria-hidden="true">
-        ${showAv ? `<img class="portrait" src="${avatarSrc(op)}" alt=""
-             referrerpolicy="no-referrer" loading="lazy" onerror="this.remove()">` : ''}
+        ${showAv ? portraitImg(avatarPlan(op)) : ''}
         <span class="initial">${esc(op.name.slice(0, 2))}</span>
         <div class="cap">
           <span class="clsbox"><img src="${PROF_ICON(op.profession)}" alt="${esc(op.profession)}"></span>
@@ -676,6 +721,7 @@ async function onBoxChange(e) {
 }
 
 async function boot() {
+  loadBundledAvatars();     // 先起步：安卓包内嵌了全量头像，清单到手后立绘零请求
   try {
     ST = await api('/api/state');
   } catch (e) {

@@ -103,7 +103,7 @@ if (window.__TAURI__ && /Android/i.test(navigator.userAgent)) {
       </section>
       <section class="settings-page" data-settings-page="display" hidden>
         <h3 class="section-band">显示设置 <small>DISPLAY SETTINGS</small></h3>
-        <div class="setting-row"><div class="setting-description"><h4>干员头像</h4><p>允许通过本地后端获取头像；关闭后不发送头像请求。</p></div><label class="toggle" id="avatars-label"><input id="avatars" type="checkbox" checked><span class="switch-track"><span class="switch-on">开启</span><span class="switch-off">关闭</span><span class="switch-thumb"></span></span><span class="sr-only">获取干员头像</span></label></div>
+        <div class="setting-row"><div class="setting-description"><h4>干员头像</h4><p>显示干员头像；关闭后不显示立绘，也不会发送任何头像请求。</p></div><label class="toggle" id="avatars-label"><input id="avatars" type="checkbox" checked><span class="switch-track"><span class="switch-on">开启</span><span class="switch-off">关闭</span><span class="switch-thumb"></span></span><span class="sr-only">获取干员头像</span></label></div>
         <div class="information-block"><h4>关于干员档案</h4><p>数据来自 MAA 干员识别导出。更换档案请使用编队页右上角的“干员档案”选单。</p><p>头像加载失败时，卡片自动显示职业底色与名字缩写；名单、等级与锁定操作不受影响。</p><p id="demo-settings-note" hidden>当前为演示模式：仅使用内置干员与本地头像，不访问后端。</p></div>
         <h3 class="section-band help-band">操作说明 <small>CONTROLS</small></h3><div class="help-row"><svg><use href="#ico-lock"/></svg><p><strong>锁定干员</strong><span>整队重抽时保留该槽位；再次点击取消锁定。</span></p></div><div class="help-row"><svg><use href="#ico-refresh"/></svg><p><strong>单格重抽</strong><span>只更换当前槽位，其余干员不变。</span></p></div>
       </section>

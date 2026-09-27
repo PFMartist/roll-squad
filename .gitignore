@@ -16,3 +16,7 @@ app/devdata/prefetch.log
 # Python 字节码（跑过打包/生成脚本就会有）
 __pycache__/
 *.pyc
+
+# 内嵌头像资源：app/make_avatar_assets.py 从 app/devdata/avatars 转出的 WebP + manifest。
+# 生成物不入库；安卓打包前现生成（CI 里有这一步），桌面版用不到它（走 data\avatars\）
+web/assets/avatars/
