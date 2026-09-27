@@ -2,8 +2,10 @@
 
 /* ---------------------------------------------------------------- 演示模式
    演示数据是**全游戏可获取干员**（429 名，含星级/职业/合成练度），烤在 assets/demo_roster.js 里，
-   由 work/20260925-roll-squad-repo/make_demo_roster.py 生成。
-   演示模式**不带干员立绘**：卡片走职业色块 + 名字首字，头像开关固定关闭（见 demoState 的 avatars_locked）。
+   由 app/make_demo_roster.py 生成。
+   演示模式的头像**只用构建时快照**（assets/avatars/ 的 WebP + manifest，CI 现生成）：命中就画，
+   没命中就是职业色块 + 名字首字 —— **不做运行时联网补图**：网页版既没有可写缓存层，也没有后端可回退。
+   清单不存在时（本地双击 index.html 又没跑生成脚本）头像开关锁死，见 demoState 的 avatars_locked。
 
    什么时候进演示：
      · 地址带 ?demo=1（**双击 index.html?demo=1 也能看**，不需要 Python、不需要 box 数据）
@@ -23,19 +25,23 @@ const ASSET = 'assets';     // 一律相对路径：file:// 下也能用
 const AVATAR_ASSET_DIR = `${ASSET}/avatars`;
 const avatarKey = (n) => String(n ?? '').replace(/[\\/:*?"<>|]/g, '_');
 let bundledAvatars = null;      // Set<string> | null —— null 表示这份包里没有内嵌头像
-let bundleTried = false;
+let bundlePromise = null;
 
+/** 取包内头像清单。boot() 会 await 它，所以首次渲染时 bundledAvatars 已经定下来了
+    （不 await 就得处理"清单比编队晚到"的补画时序，没必要）。
+    没有这份清单就静默返回 null：桌面版/浏览器直开照旧走后端，演示版锁死头像开关。 */
 function loadBundledAvatars() {
-  if (bundleTried) return;
-  bundleTried = true;
-  fetch(`${AVATAR_ASSET_DIR}/manifest.json`)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((m) => {
-      if (!m || !Array.isArray(m.names) || !m.names.length) return;
-      bundledAvatars = new Set(m.names);
-      if (squad.length) renderSquad();      // 清单比首次编队回来得晚：补画一次
-    })
-    .catch(() => { /* 没有内嵌资源：静默走原来的联网路径 */ });
+  if (!bundlePromise) {
+    bundlePromise = fetch(`${AVATAR_ASSET_DIR}/manifest.json`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((m) => {
+        if (!m || !Array.isArray(m.names) || !m.names.length) return null;
+        bundledAvatars = new Set(m.names);
+        return bundledAvatars;
+      })
+      .catch(() => null);
+  }
+  return bundlePromise;
 }
 
 const PROF_COLOR = {
@@ -65,6 +71,7 @@ const DEMO_POOLS = Object.fromEntries(Object.entries(DEMO_ROSTER.pools || {})
 const DEMO_POOL_KEYS = Object.keys(DEMO_POOLS);
 let demoPool = DEMO_POOL_KEYS[0] || '';        // 当前用哪份池子（演示模式下的"换 box"）
 let demoLastIds = new Set();                    // 只在当前页面记上一轮，不写用户历史
+let demoAvatarPref = null;                      // 演示版不落盘：这一页里手动关过头像就记在这（null = 没动过）
 const demoOps = () => (DEMO_POOLS[demoPool] || {}).ops || [];
 const demoIsMax = () => demoPool === 'max';
 const DEMO_FLOOR = Object.fromEntries(DEMO_PROFS.map((p) => [p, 1]));
@@ -116,8 +123,9 @@ function demoState() {
     },
     // 两份内置池子都列出来，BOX 下拉里可切换（demoApi 的 /api/settings 负责接）
     box_options: DEMO_POOL_KEYS.map((k) => ({ file: k, name: DEMO_POOLS[k].label, sync: null })),
-    // 演示/在线模式不带干员立绘：头像固定关闭，开关也锁住（见 syncControls）
-    avatars_enabled: false, avatars_locked: true,
+    // 演示/在线模式只用包内快照头像：有清单就默认开、开关可用；没有清单就锁死走色块（见 syncControls）
+    avatars_enabled: bundledAvatars ? demoAvatarPref !== false : false,
+    avatars_locked: !bundledAvatars,
     tiers: Object.fromEntries(Array.from({ length: TIER_MAX + 1 }, (_, t) => {
       const done = ops.filter((o) => tierPass(o, t));
       const prof = {};
@@ -159,6 +167,8 @@ function demoApi(path, body) {
       demoPool = want;
       demoLastIds = new Set();
     }
+    // 演示版不写设置文件，但"关掉头像"要当场算数，否则开关点了像没反应
+    if (body && typeof body.avatars === 'boolean') demoAvatarPref = body.avatars;
     return demoState();
   }
   if (path !== '/api/roll') throw new Error(`演示模式没有这个接口：${path}`);
@@ -352,17 +362,23 @@ async function api(path, body) {
   return data;
 }
 
-/** 头像地址：包内资源优先（安卓包全量内置，零请求），其次桌面自定义协议 / 浏览器本地服务。
-    包内没有的（发布后新出的干员）保持老行为，由 portraitError 回退到后端。 */
+/** 头像地址：包内资源优先（APK 与演示页都是全量内置，零请求），其次桌面自定义协议 / 浏览器本地服务。
+    演示版到此为止 —— 它只有构建时快照，页面上既没有后端也没有可写缓存，所以没有 fb 可退。 */
 function avatarPlan(op) {
-  if (DEMO) return { src: op.img || '', fb: '' };
-  const backend = TAURI
+  const key = avatarKey(op.name);
+  if (bundledAvatars && bundledAvatars.has(key)) {
+    const src = `${AVATAR_ASSET_DIR}/${encodeURIComponent(key)}.webp`;
+    return { src, fb: DEMO ? '' : backendAvatar(op) };
+  }
+  if (DEMO) return { src: '', fb: '' };          // 快照里没有这人：卡片走职业色块
+  return { src: backendAvatar(op), fb: '' };
+}
+
+/** 包内没有的干员（发布后新出的）：桌面走自定义协议、浏览器走本地服务，由 portraitError 兜底 */
+function backendAvatar(op) {
+  return TAURI
     ? window.__TAURI__.core.convertFileSrc(op.name, 'avatar')
     : `/api/avatar?name=${encodeURIComponent(op.name)}`;
-  if (bundledAvatars && bundledAvatars.has(avatarKey(op.name))) {
-    return { src: `${AVATAR_ASSET_DIR}/${encodeURIComponent(avatarKey(op.name))}.webp`, fb: backend };
-  }
-  return { src: backend, fb: '' };
 }
 
 /** 立绘 <img>：加载失败先退到 data-fallback（后端），再失败才撤掉整张图（卡片露出职业色块） */
@@ -656,13 +672,13 @@ function syncControls() {
   const av = $('#avatars');
   av.checked = ST.avatars_enabled !== false;
   $('#avatars-label').classList.toggle('off', !av.checked);
-  // 演示 / 在线模式没有立绘可发：开关锁死，免得让人以为点开就能出图
+  // 连包内头像清单都没有（本地直开 index.html 又没跑生成脚本）：开关锁死，免得让人以为点开就能出图
   if (ST.avatars_locked) {
     av.disabled = true;
-    $('#avatars-label').title = '在线演示不含干员立绘，头像固定关闭';
+    $('#avatars-label').title = '这份页面没有随包头像（assets/avatars 缺失），头像固定关闭';
     const row = $('#avatars-label').closest('.setting-row');
     const desc = row && row.querySelector('.setting-description p');
-    if (desc) desc.textContent = '在线演示不含干员立绘：卡片用职业色块 + 名字首字。装桌面版后才有真头像。';
+    if (desc) desc.textContent = '这份页面没有随包头像资源：卡片用职业色块 + 名字首字。';
   }
   renderBadge();
   renderBoxPick();
@@ -743,7 +759,8 @@ async function onBoxChange(e) {
 }
 
 async function boot() {
-  loadBundledAvatars();     // 先起步：安卓包内嵌了全量头像，清单到手后立绘零请求
+  // 先拿到"包内头像清单"再渲染：APK 与在线演示都靠它走零请求，它也决定演示版头像开关是否可用
+  await loadBundledAvatars();
   try {
     ST = await api('/api/state');
   } catch (e) {

@@ -1,6 +1,8 @@
 # 把 web/ 发布到 GitHub Pages —— 在线试用（内置全游戏干员的演示，纯前端、不联网）
 #
 # 页面本身不需要后端：前端探测不到本地服务时会自动进演示模式。
+# 头像跟演示池一样是**构建时快照**：这里先从仓库里的 PNG 现转成 WebP + 清单（纯本地转码、不联网），
+# 再整份 web/ 一起发布 —— 演示页因此零请求就有全量头像，运行时不做任何联网补图。
 # 站点地址：https://pfmartist.github.io/roll-squad/
 name: 部署网页演示到 Pages
 
@@ -9,6 +11,10 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      # 头像源、生成脚本、守卫脚本变了也要重新部署：否则换了图/加了干员，站点还是旧的
+      - 'app/devdata/avatars/**'
+      - 'app/make_avatar_assets.py'
+      - 'app/check_demo_avatars.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -29,6 +35,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 生成内嵌头像（PNG → WebP + manifest，纯本地转码）
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 app/make_avatar_assets.py --require
+
+      - name: 核对演示池每名干员都有随包头像
+        run: python3 app/check_demo_avatars.py
 
       - uses: actions/configure-pages@v5
 
